@@ -169,22 +169,39 @@ if __name__ == "__main__":
             print(f'train folds are {train_set.train_folds} and test fold is {train_set.test_folds}')
             print('random wave cropping')
 
+            # train_loader = torch.utils.data.DataLoader(train_set,
+            #                                            batch_size=config.batch_size,
+            #                                            shuffle=True,
+            #                                            num_workers=config.num_workers,
+            #                                            drop_last=False,
+            #                                            persistent_workers=config.persistent_workers,
+            #                                            pin_memory=True,
+            #                                            )
+
+            # val_loader = torch.utils.data.DataLoader(get_fold_dataset(subset="val"),
+            #                                          batch_size=config.batch_size,
+            #                                          shuffle=False,
+            #                                          num_workers=config.num_workers,
+            #                                          drop_last=False,
+            #                                          persistent_workers=config.persistent_workers,
+            #                                          )
+
             train_loader = torch.utils.data.DataLoader(train_set,
-                                                       batch_size=config.batch_size,
-                                                       shuffle=True,
-                                                       num_workers=config.num_workers,
-                                                       drop_last=False,
-                                                       persistent_workers=config.persistent_workers,
-                                                       pin_memory=True,
-                                                       )
+                                    batch_size=config.batch_size,
+                                    shuffle=True,
+                                    num_workers=config.num_workers,
+                                    pin_memory=True,
+                                    persistent_workers=config.persistent_workers,
+                                    prefetch_factor=4,
+            )
 
             val_loader = torch.utils.data.DataLoader(get_fold_dataset(subset="val"),
-                                                     batch_size=config.batch_size,
-                                                     shuffle=False,
-                                                     num_workers=config.num_workers,
-                                                     drop_last=False,
-                                                     persistent_workers=config.persistent_workers,
-                                                     )
+                                batch_size=config.batch_size,
+                                shuffle=False,
+                                num_workers=config.num_workers,
+                                pin_memory=True,
+                                persistent_workers=config.persistent_workers,
+            )
 
             print()
             # instantiate model

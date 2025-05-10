@@ -19,12 +19,22 @@ n_mels = 128
 hop_length = 512
 #n_mfcc = 42
 
-model_constructor = "AudioMLP(n_steps=431,\
-n_mels=config.n_mels,\
-hidden1_size=512,\
-hidden2_size=128,\
-output_size=config.n_classes,\
-time_reduce=1)"
+# model_constructor = "AudioMLP(n_steps=431,\
+# n_mels=config.n_mels,\
+# hidden1_size=512,\
+# hidden2_size=128,\
+# output_size=config.n_classes,\
+# time_reduce=1)"
+
+model_constructor = (
+    "AudioCNN("
+    "n_mels=config.n_mels, "
+    "n_steps=431, "
+    "n_classes=config.n_classes"
+    ")"
+)
+
+
 
 # ###TRAINING
 # ratio to split off from training data
@@ -32,12 +42,14 @@ val_size = .2  # could be changed
 device_id = 0
 batch_size = 32
 # in Colab to avoid Warning
-num_workers = 2
-num_workers = 0
+
+num_workers = 4
+#num_workers = 0
+
 # for local Windows or Linux machine
 # num_workers = 6#16
 persistent_workers = True
-persistent_workers = False
+#persistent_workers = False
 epochs = 200
 #epochs = 1
 # early stopping after epochs with no improvement
