@@ -30,42 +30,56 @@ import torch.nn.functional as F
 #         x = self.fc3(x)
 #         return x
 
-class AudioCNN(nn.Module):
-    def __init__(self, n_mels, n_steps, n_classes):
+class ResidualBlock(nn.Module):
+    def __init__(self, in_c, out_c, stride=1):
         super().__init__()
-        # Input: (B, 1, n_mels, n_steps)
-        self.conv1 = nn.Conv2d(1, 16, kernel_size=3, padding=1)
-        self.bn1   = nn.BatchNorm2d(16)
-        self.pool1 = nn.MaxPool2d(2)   # -> (16, n_mels/2, n_steps/2)
-
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-        self.bn2   = nn.BatchNorm2d(32)
-        self.pool2 = nn.MaxPool2d(2)   # -> (32, n_mels/4, n_steps/4)
-
-        self.conv3 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.bn3   = nn.BatchNorm2d(64)
-        self.pool3 = nn.MaxPool2d(2)   # -> (64, n_mels/8, n_steps/8)
-
-        # Feature-Map-Größen berechnen
-        fm_h = n_mels // 8
-        fm_w = n_steps // 8
-        self.fc1   = nn.Linear(64 * fm_h * fm_w, 256)
-        self.dropout = nn.Dropout(0.5)
-        self.fc2   = nn.Linear(256, n_classes)
+        self.conv1 = nn.Conv2d(in_c, out_c, 3, stride, 1)
+        self.bn1   = nn.BatchNorm2d(out_c)
+        self.conv2 = nn.Conv2d(out_c, out_c, 3, 1, 1)
+        self.bn2   = nn.BatchNorm2d(out_c)
+        self.down = nn.Sequential()
+        if stride != 1 or in_c != out_c:
+            self.down = nn.Sequential(
+                nn.Conv2d(in_c, out_c, 1, stride),
+                nn.BatchNorm2d(out_c)
+            )
 
     def forward(self, x):
-        # x: (B, 1, n_mels, n_steps)
-        x = F.relu(self.bn1(self.conv1(x)))
-        x = self.pool1(x)
+        identity = self.down(x)
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        return F.relu(out + identity)
 
-        x = F.relu(self.bn2(self.conv2(x)))
-        x = self.pool2(x)
+class AudioResNet(nn.Module):
+    def __init__(self, n_mels, n_steps, n_classes):
+        super().__init__()
+        # initial layer
+        self.stem = nn.Sequential(
+            nn.Conv2d(1, 64, 7, 2, 3),
+            nn.BatchNorm2d(64), nn.ReLU(),
+            nn.MaxPool2d(3, 2, 1)
+        )
+        # build 4 Stages: [64,128,256,512] channels
+        self.layer1 = self._make_layer(64, 64, 2, stride=1)
+        self.layer2 = self._make_layer(64,128, 2, stride=2)
+        self.layer3 = self._make_layer(128,256,2, stride=2)
+        self.layer4 = self._make_layer(256,512,2, stride=2)
+        # global pooling + FC
+        self.avgpool = nn.AdaptiveAvgPool2d((1,1))
+        self.fc      = nn.Linear(512, n_classes)
 
-        x = F.relu(self.bn3(self.conv3(x)))
-        x = self.pool3(x)
+    def _make_layer(self, in_c, out_c, blocks, stride):
+        layers = [ResidualBlock(in_c, out_c, stride)]
+        for _ in range(1, blocks):
+            layers.append(ResidualBlock(out_c, out_c))
+        return nn.Sequential(*layers)
 
-        x = x.view(x.size(0), -1)
-        x = F.relu(self.fc1(x))
-        x = self.dropout(x)
-        return self.fc2(x)
-
+    def forward(self, x):
+        # x: (B,1,n_mels,n_steps)
+        x = self.stem(x)       # -> (B,64,n_mels/2,n_steps/2)
+        x = self.layer1(x)     # -> (B,64,...)
+        x = self.layer2(x)     # -> (B,128,...)
+        x = self.layer3(x)     # -> (B,256,...)
+        x = self.layer4(x)     # -> (B,512,...)
+        x = self.avgpool(x).flatten(1)
+        return self.fc(x)

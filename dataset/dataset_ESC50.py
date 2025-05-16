@@ -100,12 +100,20 @@ class ESC50(data.Dataset):
                 transforms.RandomCrop(out_len=out_len)
             )
 
+            # self.spec_transforms = transforms.Compose(
+            #     # to Tensor and prepend singleton dim
+            #     #lambda x: torch.Tensor(x).unsqueeze(0),
+            #     # lambda non-pickleable, problem on windows, replace with partial function
+            #     torch.Tensor,
+            #     partial(torch.unsqueeze, dim=0),
+            # )
+
+            from SpecAugment import SpecAugment  # importieren
+            # SpecAugment is a data augmentation method for speech recognition
             self.spec_transforms = transforms.Compose(
-                # to Tensor and prepend singleton dim
-                #lambda x: torch.Tensor(x).unsqueeze(0),
-                # lambda non-pickleable, problem on windows, replace with partial function
                 torch.Tensor,
                 partial(torch.unsqueeze, dim=0),
+                SpecAugment(time_mask_param=30, freq_mask_param=13)  # neue Zeile
             )
 
         else:

@@ -27,14 +27,12 @@ hop_length = 512
 # time_reduce=1)"
 
 model_constructor = (
-    "AudioCNN("
+    "AudioResNet("
     "n_mels=config.n_mels, "
     "n_steps=431, "
     "n_classes=config.n_classes"
     ")"
 )
-
-
 
 # ###TRAINING
 # ratio to split off from training data
