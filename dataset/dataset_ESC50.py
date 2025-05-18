@@ -182,19 +182,20 @@ class ESC50(data.Dataset):
                                         n_mfcc=self.n_mfcc)
             feat = mfcc
         else:
-            # 1) NumPy → Tensor auf GPU
-            wav = torch.from_numpy(wave_copy).float().to(device)   # shape (T,)
-            wav = wav.unsqueeze(0)  # (1, T)
+            # wave_copy ist bereits ein torch.Tensor (vom wave_transforms-Compose)
+            wav = wave_copy.to(device)       # (T,) auf GPU
+            if wav.dim() == 1:
+                wav = wav.unsqueeze(0)       # (1, T)
 
-            # 2) Mel-Spectrogramm + dB-Umwandlung auf GPU
-            mel = self.mel_transform(wav)      # (1, n_mels, n_steps)
-            log_s = self.db_transform(mel)     # (1, n_mels, n_steps)
+            # Mel-Spektrogramm + dB-Umwandlung auf GPU
+            mel   = self.mel_transform(wav)  # → (1, n_mels, n_steps)
+            log_s = self.db_transform(mel)   # → (1, n_mels, n_steps)
 
-            # 3) zurück auf CPU, SpecAugment & Normalisierung
+            # zurück auf CPU für SpecAugment & verbleibende Transforms
             log_s = log_s.cpu()
-            log_s = self.spec_transforms(log_s)
+            spec  = self.spec_transforms(log_s)
 
-            feat = log_s
+            feat = spec
 
             # s = librosa.feature.melspectrogram(y=wave_copy.numpy(),
             #                                    sr=config.sr,
