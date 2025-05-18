@@ -182,24 +182,26 @@ class ESC50(data.Dataset):
                                         n_mfcc=self.n_mfcc)
             feat = mfcc
         else:
-            # wave_copy kommt aus self.wave_transforms – es kann ein np.ndarray oder ein Tensor sein
-            if isinstance(wave_copy, np.ndarray):
-                wav = torch.from_numpy(wave_copy).float()
-            else:
-                wav = wave_copy.float()
+            # wave_copy kommt aus wave_transforms und ist bereits ein Tensor
+            # (nach wave_copy.squeeze_(0) hat er Shape (T,))
+            wav = wave_copy.float()
 
-            # sicherstellen, dass wir (1, T)-Shape für MelSpectrogram haben
+            # Für MelSpectrogram brauchen wir Shape (1, T)
             if wav.dim() == 1:
-                wav = wav.unsqueeze(0)  # aus (T,) -> (1, T)
+                wav = wav.unsqueeze(0)        # -> (1, T)
 
-            # Mel-Spektrogramm und dB-Umwandlung auf der CPU
-            mel   = self.mel_transform(wav)   # (1, n_mels, n_steps)
-            log_s = self.db_transform(mel)    # (1, n_mels, n_steps)
+            # 1) CPU: Mel-Spektrogramm und dB-Umwandlung
+            mel   = self.mel_transform(wav)   # -> (1, n_mels, n_steps)
+            log_s = self.db_transform(mel)    # -> (1, n_mels, n_steps)
 
-            # SpecAugment & weitere spektrale Transforms (CPU)
-            spec = self.spec_transforms(log_s)
+            # 2) CPU: SpecAugment & restliche spec_transforms
+            spec = self.spec_transforms(log_s)  # -> (1, 1, n_mels, n_steps)
+
+            # 3) Überflüssiges Kanal-Dim entfernen
+            spec = spec.squeeze(1)             # -> (1, n_mels, n_steps)
 
             feat = spec
+
 
 
             # s = librosa.feature.melspectrogram(y=wave_copy.numpy(),
