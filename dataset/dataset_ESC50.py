@@ -1,5 +1,7 @@
 import torch
 from torch.utils import data
+import torchaudio.transforms as T
+from dataset.SpecAugment import SpecAugment
 from sklearn.model_selection import train_test_split
 import requests
 from tqdm import tqdm
@@ -108,7 +110,7 @@ class ESC50(data.Dataset):
             #     partial(torch.unsqueeze, dim=0),
             # )
 
-            from SpecAugment import SpecAugment  # importieren
+            # importieren
             # SpecAugment is a data augmentation method for speech recognition
             self.spec_transforms = transforms.Compose(
                 torch.Tensor,
@@ -132,7 +134,16 @@ class ESC50(data.Dataset):
         self.global_mean = global_mean_std[0]
         self.global_std = global_mean_std[1]
         self.n_mfcc = config.n_mfcc if hasattr(config, "n_mfcc") else None
-
+######################################################################################################
+        self.mel_transform = T.MelSpectrogram(
+            sample_rate=config.sr,
+            n_fft=1024,
+            hop_length=config.hop_length,
+            n_mels=config.n_mels,
+            power=2.0,        # power=2.0 für Energie, entspricht librosa
+        ).to(device)          # direkt auf GPU schieben
+        self.db_transform  = T.AmplitudeToDB().to(device)
+######################################################################################################
     def __len__(self):
         return len(self.file_names)
 
@@ -171,19 +182,33 @@ class ESC50(data.Dataset):
                                         n_mfcc=self.n_mfcc)
             feat = mfcc
         else:
-            s = librosa.feature.melspectrogram(y=wave_copy.numpy(),
-                                               sr=config.sr,
-                                               n_mels=config.n_mels,
-                                               n_fft=1024,
-                                               hop_length=config.hop_length,
-                                               #center=False,
-                                               )
-            log_s = librosa.power_to_db(s, ref=np.max)
+            # 1) NumPy → Tensor auf GPU
+            wav = torch.from_numpy(wave_copy).float().to(device)   # shape (T,)
+            wav = wav.unsqueeze(0)  # (1, T)
 
-            # masking the spectrograms
+            # 2) Mel-Spectrogramm + dB-Umwandlung auf GPU
+            mel = self.mel_transform(wav)      # (1, n_mels, n_steps)
+            log_s = self.db_transform(mel)     # (1, n_mels, n_steps)
+
+            # 3) zurück auf CPU, SpecAugment & Normalisierung
+            log_s = log_s.cpu()
             log_s = self.spec_transforms(log_s)
 
             feat = log_s
+
+            # s = librosa.feature.melspectrogram(y=wave_copy.numpy(),
+            #                                    sr=config.sr,
+            #                                    n_mels=config.n_mels,
+            #                                    n_fft=1024,
+            #                                    hop_length=config.hop_length,
+            #                                    center=False,
+            #                                    )
+            # log_s = librosa.power_to_db(s, ref=np.max)
+
+            # # masking the spectrograms
+            # log_s = self.spec_transforms(log_s)
+
+            # feat = log_s
 
         # normalize
         if self.global_mean:

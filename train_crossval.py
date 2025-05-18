@@ -234,12 +234,24 @@ if __name__ == "__main__":
             fit_classifier()
 
             # tests
-            test_loader = torch.utils.data.DataLoader(get_fold_dataset(subset="test"),
-                                                      batch_size=config.batch_size,
-                                                      shuffle=False,
-                                                      num_workers=0,  # config.num_workers,
-                                                      drop_last=False,
-                                                      )
+            # test_loader = torch.utils.data.DataLoader(get_fold_dataset(subset="test"),
+            #                                           batch_size=config.batch_size,
+            #                                           shuffle=False,
+            #                                           num_workers=0,  # config.num_workers,
+            #                                           drop_last=False,
+            #                                           )
+
+            test_loader = torch.utils.data.DataLoader(
+                get_fold_dataset(subset="test"),
+                batch_size=config.batch_size,
+                shuffle=False,
+                num_workers=config.num_workers,          # z.B. 4
+                pin_memory=True,                         # für schnellere GPU-Übertragung
+                persistent_workers=config.persistent_workers,  # Worker zwischenspeichern
+                prefetch_factor=2,                       # lädt 2 Batches pro Worker vor
+                drop_last=False,
+            )
+
 
             print(f'\ntest {experiment}')
             test_acc, test_loss, _ = test(model, test_loader, criterion=criterion, device=device)
