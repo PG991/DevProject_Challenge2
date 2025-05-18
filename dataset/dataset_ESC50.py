@@ -184,7 +184,7 @@ class ESC50(data.Dataset):
         else:
             # wave_copy kommt aus wave_transforms und ist bereits ein Tensor
             # (nach wave_copy.squeeze_(0) hat er Shape (T,))
-            wav = wave_copy.float()
+            wav = wave_copy.float() #
 
             # Für MelSpectrogram brauchen wir Shape (1, T)
             if wav.dim() == 1:
