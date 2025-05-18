@@ -141,8 +141,8 @@ class ESC50(data.Dataset):
             hop_length=config.hop_length,
             n_mels=config.n_mels,
             power=2.0,        # power=2.0 für Energie, entspricht librosa
-        ).to(device)          # direkt auf GPU schieben
-        self.db_transform  = T.AmplitudeToDB().to(device)
+        )
+        self.db_transform  = T.AmplitudeToDB()
 ######################################################################################################
     def __len__(self):
         return len(self.file_names)
@@ -183,7 +183,7 @@ class ESC50(data.Dataset):
             feat = mfcc
         else:
             # wave_copy ist bereits ein torch.Tensor (vom wave_transforms-Compose)
-            wav = wave_copy.to(device)       # (T,) auf GPU
+            wav = torch.from_numpy(wave_copy).float()       # (T,) auf GPU
             if wav.dim() == 1:
                 wav = wav.unsqueeze(0)       # (1, T)
 
