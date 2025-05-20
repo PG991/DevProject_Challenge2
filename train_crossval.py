@@ -66,9 +66,9 @@ def train_epoch():
 
         # the forward pass through the model
         y_prob = model(x)
-
         # we could also use 'F.one_hot(y_true)' for 'y_true', but this would be slower
         loss = criterion(y_prob, y_true)
+
         # reset the gradients to zero - avoids accumulation
         optimizer.zero_grad()
         # compute the gradient with backpropagation
@@ -211,7 +211,10 @@ if __name__ == "__main__":
             print('*****')
 
             # Define a loss function and optimizer
-            criterion = nn.CrossEntropyLoss().to(device)
+            #criterion = nn.CrossEntropyLoss().to(device)
+
+            criterion = nn.CrossEntropyLoss(label_smoothing=0.1).to(device)
+
 
             # optimizer = torch.optim.SGD(model.parameters(),
             #                             lr=config.lr,
@@ -221,12 +224,22 @@ if __name__ == "__main__":
             optimizer = torch.optim.AdamW(model.parameters(),
                             lr=config.lr,
                             weight_decay=config.weight_decay)
+            
+            scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                 optimizer,
+                 max_lr=1e-2,
+                 steps_per_epoch=len(train_loader),
+                 epochs=config.epochs,
+                 pct_start=0.3,
+                 anneal_strategy='linear'
+            )
+
 
             # scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
             #                                             step_size=config.step_size,
             #                                             gamma=config.gamma)
 
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.epochs)
+            #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.epochs)
             
 
             # fit the model using only training and validation data, no testing data allowed here
