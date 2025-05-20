@@ -137,7 +137,7 @@ class ESC50(data.Dataset):
 ######################################################################################################
         self.mel_transform = T.MelSpectrogram(
             sample_rate=config.sr,
-            n_fft=1024,
+            n_fft=2048,
             hop_length=config.hop_length,
             n_mels=config.n_mels,
             power=2.0,        # power=2.0 für Energie, entspricht librosa
@@ -198,10 +198,10 @@ class ESC50(data.Dataset):
             spec = self.spec_transforms(log_s)  # -> (1, 1, n_mels, n_steps)
 
             # 3) Überflüssiges Kanal-Dim entfernen
-            spec = spec.squeeze(1)             # -> (1, n_mels, n_steps)
+            #spec = spec.squeeze(1)             # -> (1, n_mels, n_steps)
 
             feat = spec
-
+            feat = (feat - self.global_mean) / self.global_std
 
 
             # s = librosa.feature.melspectrogram(y=wave_copy.numpy(),
@@ -219,8 +219,8 @@ class ESC50(data.Dataset):
             # feat = log_s
 
         # normalize
-        if self.global_mean:
-            feat = (feat - self.global_mean) / self.global_std
+        # if self.global_mean:
+        #     feat = (feat - self.global_mean) / self.global_std
 
         return file_name, feat, class_id
 

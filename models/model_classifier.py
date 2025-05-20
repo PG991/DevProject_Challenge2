@@ -106,6 +106,6 @@ class AudioResNet(nn.Module):
         x = self.layer2(x)     # -> (B,128,...)
         x = self.layer3(x)     # -> (B,256,...)
         x = self.layer4(x)     # -> (B,512,...)
-        x = self.dropout(x)
         x = self.avgpool(x).flatten(1)
+        x = self.dropout(x)
         return self.fc(x)
