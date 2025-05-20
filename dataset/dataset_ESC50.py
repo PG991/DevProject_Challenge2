@@ -195,15 +195,24 @@ class ESC50(data.Dataset):
             log_s = self.db_transform(mel)    # -> (1, n_mels, n_steps)
 
             # 2) CPU: SpecAugment & restliche spec_transforms
-            spec = self.spec_transforms(log_s)  # -> (1, 1, n_mels, n_steps)
+            #spec = self.spec_transforms(log_s)  # -> (1, 1, n_mels, n_steps)
 
             # 3) Überflüssiges Kanal-Dim entfernen
             #spec = spec.squeeze(1)             # -> (1, n_mels, n_steps)
 
-            feat = spec
+            #feat = spec
+
+
+            if self.subset == "train":
+               log_s = SpecAugment(time_mask_param=20,
+                               freq_mask_param=10,
+                                num_masks=2)(log_s)
+            feat = log_s                       # -> (1, n_mels, n_steps)
+
             feat = (feat - self.global_mean) / self.global_std
 
 
+            
             # s = librosa.feature.melspectrogram(y=wave_copy.numpy(),
             #                                    sr=config.sr,
             #                                    n_mels=config.n_mels,
