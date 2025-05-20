@@ -30,25 +30,25 @@ import torch.nn.functional as F
 #         x = self.fc3(x)
 #         return x
 
-class SEBlock(nn.Module):
-    def __init__(self, channels, reduction=16):
-        super().__init__()
-        # Squeeze
-        self.fc1 = nn.Linear(channels, channels // reduction, bias=False)
-        # Excitation
-        self.fc2 = nn.Linear(channels // reduction, channels, bias=False)
+# class SEBlock(nn.Module):
+#     def __init__(self, channels, reduction=16):
+#         super().__init__()
+#         # Squeeze
+#         self.fc1 = nn.Linear(channels, channels // reduction, bias=False)
+#         # Excitation
+#         self.fc2 = nn.Linear(channels // reduction, channels, bias=False)
 
-    def forward(self, x):
-        # x: (B, C, H, W)
-        b, c, _, _ = x.size()
-        # Global Average Pooling -> (B, C)
-        y = x.mean(dim=[2,3])
-        # Bottleneck
-        y = F.relu(self.fc1(y))
-        # Skalierungsfaktoren
-        y = torch.sigmoid(self.fc2(y))  # (B, C)
-        # Reshape und multiplizieren
-        return x * y.view(b, c, 1, 1)
+#     def forward(self, x):
+#         # x: (B, C, H, W)
+#         b, c, _, _ = x.size()
+#         # Global Average Pooling -> (B, C)
+#         y = x.mean(dim=[2,3])
+#         # Bottleneck
+#         y = F.relu(self.fc1(y))
+#         # Skalierungsfaktoren
+#         y = torch.sigmoid(self.fc2(y))  # (B, C)
+#         # Reshape und multiplizieren
+#         return x * y.view(b, c, 1, 1)
 
 
 
@@ -71,6 +71,7 @@ class ResidualBlock(nn.Module):
         out = F.relu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
         return F.relu(out + identity)
+    
 
 class AudioResNet(nn.Module):
     def __init__(self, n_mels, n_steps, n_classes):
@@ -88,26 +89,14 @@ class AudioResNet(nn.Module):
         self.layer4 = self._make_layer(256, 512, 2, stride=2)
         # global pooling + FC
         self.avgpool = nn.AdaptiveAvgPool2d((1,1))
+        self.dropout  = nn.Dropout(0.3)
         self.fc      = nn.Linear(512, n_classes)
 
-    # def _make_layer(self, in_c, out_c, blocks, stride): #69,5
-    #     layers = [ResidualBlock(in_c, out_c, stride)]
-    #     for _ in range(1, blocks):
-    #         layers.append(ResidualBlock(out_c, out_c))
-    #     return nn.Sequential(*layers)
-
-    def _make_layer(self, in_c, out_c, blocks, stride):
-        layers = []
-      # erster Block mit Downsample/Stride
-        layers.append(ResidualBlock(in_c, out_c, stride))
-        layers.append(SEBlock(out_c))
-        # weitere Blocks
+    def _make_layer(self, in_c, out_c, blocks, stride): #69,5
+        layers = [ResidualBlock(in_c, out_c, stride)]
         for _ in range(1, blocks):
             layers.append(ResidualBlock(out_c, out_c))
-            layers.append(SEBlock(out_c))
-
         return nn.Sequential(*layers)
-
 
 
     def forward(self, x):
@@ -117,5 +106,6 @@ class AudioResNet(nn.Module):
         x = self.layer2(x)     # -> (B,128,...)
         x = self.layer3(x)     # -> (B,256,...)
         x = self.layer4(x)     # -> (B,512,...)
+        x = self.dropout(x)
         x = self.avgpool(x).flatten(1)
         return self.fc(x)
