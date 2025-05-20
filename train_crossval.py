@@ -76,7 +76,7 @@ def train_epoch():
         losses.append(loss.item())
         # minimize the loss via the gradient - adapts the model parameters
         optimizer.step()
-
+        scheduler.step()
         y_pred = torch.argmax(y_prob, dim=1)
         corrects += (y_pred == y_true).sum().item()
         samples_count += y_true.shape[0]
@@ -213,7 +213,7 @@ if __name__ == "__main__":
             # Define a loss function and optimizer
             #criterion = nn.CrossEntropyLoss().to(device)
 
-            criterion = nn.CrossEntropyLoss(label_smoothing=0.1).to(device)
+            criterion = nn.CrossEntropyLoss(label_smoothing=0.2).to(device) # was 0.1   
 
 
             # optimizer = torch.optim.SGD(model.parameters(),
@@ -225,14 +225,24 @@ if __name__ == "__main__":
                             lr=config.lr,
                             weight_decay=config.weight_decay)
             
-            scheduler = torch.optim.lr_scheduler.OneCycleLR(
-                 optimizer,
-                 max_lr=1e-2,
-                 steps_per_epoch=len(train_loader),
-                 epochs=config.epochs,
-                 pct_start=0.3,
-                 anneal_strategy='linear'
+
+             # Cosine Restarts: jede 50. Epoche ein Restart
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+                optimizer,
+                T_0=50,          # nach 50 Epochen erster Restart
+                T_mult=1,        # alle weiteren auch T_0 lang
+                eta_min=1e-5     # minimale LR
             )
+
+            
+            # scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            #      optimizer,
+            #      max_lr=1e-2,
+            #      steps_per_epoch=len(train_loader),
+            #      epochs=config.epochs,
+            #      pct_start=0.3,
+            #      anneal_strategy='linear'
+            # )
 
 
             # scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
