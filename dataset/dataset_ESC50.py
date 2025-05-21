@@ -92,6 +92,7 @@ class ESC50(data.Dataset):
         # the number of samples in the wave (=length) required for spectrogram
         out_len = int(((config.sr * 5) // config.hop_length) * config.hop_length)
         train = self.subset == "train"
+        
         if train:
             # augment training data with transformations that include randomness
             # transforms can be applied on wave and spectral representation
@@ -99,7 +100,11 @@ class ESC50(data.Dataset):
                 torch.Tensor,
                 #transforms.RandomScale(max_scale=1.25),
                 transforms.RandomPadding(out_len=out_len),
-                transforms.RandomCrop(out_len=out_len)
+                transforms.RandomCrop(out_len=out_len),
+                transforms.RandomScale(max_scale=1.2),    # zufällige Skalierung
+                transforms.RandomGain(max_gain_db=6.0),   # Lautstärke-Variation
+                transforms.RandomTimeShift(max_shift=0.1), # verschiebe um ±10% der Länge
+                transforms.RandomNoise(min_noise=0.0, max_noise=0.02),
             )
 
             # self.spec_transforms = transforms.Compose(
@@ -115,7 +120,7 @@ class ESC50(data.Dataset):
             self.spec_transforms = transforms.Compose(
                 torch.Tensor,
                 partial(torch.unsqueeze, dim=0),
-                SpecAugment(time_mask_param=30, freq_mask_param=13)  # neue Zeile
+                SpecAugment(time_mask_param=40, freq_mask_param=20, num_masks= 4)  # neue Zeile
             )
 
         else:
@@ -212,7 +217,7 @@ class ESC50(data.Dataset):
             feat = (feat - self.global_mean) / self.global_std
 
 
-            
+
             # s = librosa.feature.melspectrogram(y=wave_copy.numpy(),
             #                                    sr=config.sr,
             #                                    n_mels=config.n_mels,

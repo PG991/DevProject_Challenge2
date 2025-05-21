@@ -175,6 +175,30 @@ class TimeMask():
         return self.addTimeMask(wave)
 
 
+class RandomGain:
+    """Zufällige Lautstärke-Änderung in dB"""
+    def __init__(self, max_gain_db=6.0):
+        self.max_gain_db = max_gain_db
+
+    def __call__(self, signal: torch.Tensor) -> torch.Tensor:
+        # gain in dB ∼ Uniform(−max_gain_db, +max_gain_db)
+        db = random.uniform(-self.max_gain_db, self.max_gain_db)
+        factor = 10 ** (db / 20)
+        return signal * factor
+
+
+class RandomTimeShift:
+    """Zufälliges Rollen (Shift) des Signals um bis zu max_shift Prozent"""
+    def __init__(self, max_shift=0.1):
+        # max_shift: z.B. 0.1 = ±10% Länge
+        self.max_shift = max_shift
+
+    def __call__(self, signal: torch.Tensor) -> torch.Tensor:
+        length = signal.shape[-1]
+        # shift in Samples
+        max_offset = int(length * self.max_shift)
+        offset = random.randint(-max_offset, max_offset)
+        return torch.roll(signal, shifts=offset, dims=-1)
 
 
 

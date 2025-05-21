@@ -14,6 +14,7 @@ from models.model_classifier import AudioResNet
 from models.utils import EarlyStopping, Tee
 from dataset.dataset_ESC50 import ESC50
 import config
+from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 
 
 # mean and std of train data for every fold
@@ -225,14 +226,22 @@ if __name__ == "__main__":
                             lr=config.lr,
                             weight_decay=config.weight_decay)
             
+            
+            # 1) warm-up über 10 Epochen von lr*1e-3 → lr
+            warmup_epochs = 10
+            scheduler_warmup = LinearLR(optimizer,
+                                    start_factor=1e-3,
+                                    total_iters=warmup_epochs)
 
-             # Cosine Restarts: jede 50. Epoche ein Restart
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-                optimizer,
-                T_0=50,          # nach 50 Epochen erster Restart
-                T_mult=1,        # alle weiteren auch T_0 lang
-                eta_min=1e-5     # minimale LR
-            )
+            # 2) Cosine‐Annealing für die restlichen Epochen auf eta_min=1e-6
+            scheduler_cosine = CosineAnnealingLR(optimizer,
+                                                T_max=config.epochs - warmup_epochs,
+                                                eta_min=1e-6)
+
+            # kombiniere beide
+            scheduler = SequentialLR(optimizer,
+                                    schedulers=[scheduler_warmup, scheduler_cosine],
+                                    milestones=[warmup_epochs])
 
             
             # scheduler = torch.optim.lr_scheduler.OneCycleLR(
