@@ -100,7 +100,8 @@ class ESC50(data.Dataset):
                 torch.Tensor,
                 transforms.RandomScale(max_scale=1.25),
                 transforms.RandomPadding(out_len=out_len),
-                transforms.RandomCrop(out_len=out_len)
+                transforms.RandomCrop(out_len=out_len),
+                SpecAugment(time_mask_param=60, freq_mask_param=30, num_masks=2),
             )
 
             self.spec_transforms = transforms.Compose(

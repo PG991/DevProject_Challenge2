@@ -58,7 +58,7 @@ class BasicBlock(nn.Module):
 class AudioResNet18(nn.Module):
     """ResNet-18 für 1-kanalige Mel-Spektrogramme"""
 
-    def __init__(self, n_classes, drop_p=0.3):
+    def __init__(self, n_classes, drop_p=0.15):
         super().__init__()
         self.in_planes = 64
 
