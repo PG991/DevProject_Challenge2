@@ -1,3 +1,4 @@
+import torch
 # dir with ESC50 data
 esc50_path = 'data/esc50'
 
