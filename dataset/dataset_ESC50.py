@@ -145,34 +145,33 @@ class ESC50(data.Dataset):
         file_name = self.file_names[index]
         path = os.path.join(self.root, file_name)
 
-        # 2) Roh-Audio laden (NumPy-Array)
-        wave, rate = librosa.load(path, sr=config.sr)
+        # 2) Roh-Audio laden
+        wave, rate = librosa.load(path, sr=config.sr)  # wave: np.ndarray
 
         # 3) Label extrahieren
         class_id = int(file_name.split('-')[-1].split('.')[0])
 
         # 4) Dimensionalität sicherstellen: (1, Time)
         if wave.ndim == 1:
-            wave = wave[np.newaxis, :]
+            wave = wave[np.newaxis, :]  # → np.ndarray (1, Time)
 
-        # 5) Normierung wie gehabt
+        # 5) Normierung
         if np.abs(wave).max() > 1.0:
             wave = transforms.scale(wave, wave.min(), wave.max(), -1.0, 1.0)
         wave = wave * 32768.0
 
         # 6) Stille abschneiden
-        nonzero = wave.nonzero()[1]
-        start, end = nonzero.min(), nonzero.max()
-        wave = wave[:, start : end + 1]
+        nz = wave.nonzero()[1]
+        start, end = nz.min(), nz.max()
+        wave = wave[:, start : end+1]
 
-        # 7) Wave-Augmentierung auf NumPy-Ebene
-        wave = self.wave_transforms(wave)  # → np.array (1, Time)
+        # 7) Augmentierung auf NumPy-Ebene, liefert bereits torch.Tensor
+        wave_tensor = self.wave_transforms(wave)  # → torch.Tensor (1, Time)
 
-        # 8) Konvertierung zu Torch-Tensor
-        wave_tensor = torch.from_numpy(wave).float()  # Shape: (1, Time)
+        # 8) Sicherstellen, dass es FloatTensor ist
+        wave_tensor = wave_tensor.float()
 
         return file_name, wave_tensor, class_id
-
 
 def get_global_stats(data_path):
     res = []
