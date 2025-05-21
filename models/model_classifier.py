@@ -135,7 +135,7 @@ class ResidualBlock(nn.Module):
         out = self.dropout2(out)
         return F.relu(out + identity)
 
-class AudioResNetSmall(nn.Module):
+class AudioResNet(nn.Module):
     def __init__(self, n_mels, n_steps, n_classes, drop_p=0.3):
         super().__init__()
         # Stem mit halbierter Kanalzahl
