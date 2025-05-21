@@ -109,8 +109,9 @@ class AudioResNet18(nn.Module):
         spec_db = (spec_db - mean) / (std + 1e-6)
 
         # 3) Kanal-Dimension hinzufügen
-        x = spec_db.unsqueeze(1)                # -> (B,1,n_mels,Time')
-
+        #x = spec_db.unsqueeze(1)                # -> (B,1,n_mels,Time')
+        x = spec_db
+        
         # 4) ResNet-Forward
         x = self.conv1(x)
         x = self.bn1(x)
