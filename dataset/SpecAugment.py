@@ -3,11 +3,11 @@ import torchaudio.transforms as T
 import random
 
 class SpecAugment(torch.nn.Module):
-    def __init__(self, time_mask_param=60, freq_mask_param=30, num_masks=4):
-        super().__init__()
+    def __init__(self, time_mask_param=30, freq_mask_param=13, num_masks=2):
+        super().init()
         self.time_mask_param = time_mask_param
         self.freq_mask_param = freq_mask_param
-        self.num_masks       = num_masks
+        self.num_masks = num_masks
 
 
     def forward(self, x):
@@ -19,3 +19,11 @@ class SpecAugment(torch.nn.Module):
             x = time_mask(x)
             x = freq_mask(x)
         return x
+    
+
+class SpecAugment(torch.nn.Module):
+    def init(self, time_mask_param=30, freq_mask_param=13, num_masks=2):
+        super().init()
+        self.time_mask_param = time_mask_param
+        self.freq_mask_param = freq_mask_param
+        self.num_masks = num_masks

@@ -1,7 +1,5 @@
 import torch
 from torch.utils import data
-import torchaudio.transforms as T
-from dataset.SpecAugment import SpecAugment
 from sklearn.model_selection import train_test_split
 import requests
 from tqdm import tqdm
@@ -54,7 +52,7 @@ def download_progress(current, total, width=80):
 
 class ESC50(data.Dataset):
 
-    def __init__(self, root, test_folds=frozenset((1,)), subset="train", global_mean_std=(0.0, 0.0), download=False):
+    def __init__(self, root, test_folds=frozenset((1,)), subset="train", global_mean_std=(0.0, 1.0), download=False):
         audio = 'ESC-50-master/audio'
         root = os.path.normpath(root)
         audio = os.path.join(root, audio)
@@ -92,16 +90,14 @@ class ESC50(data.Dataset):
         # the number of samples in the wave (=length) required for spectrogram
         out_len = int(((config.sr * 5) // config.hop_length) * config.hop_length)
         train = self.subset == "train"
-        
         if train:
             # augment training data with transformations that include randomness
             # transforms can be applied on wave and spectral representation
             self.wave_transforms = transforms.Compose(
                 torch.Tensor,
-                transforms.RandomScale(max_scale=1.25),
+                #transforms.RandomScale(max_scale=1.25),
                 transforms.RandomPadding(out_len=out_len),
-                transforms.RandomCrop(out_len=out_len),
-                SpecAugment(time_mask_param=60, freq_mask_param=30, num_masks=2),
+                transforms.RandomCrop(out_len=out_len)
             )
 
             self.spec_transforms = transforms.Compose(
@@ -120,6 +116,7 @@ class ESC50(data.Dataset):
                 transforms.RandomPadding(out_len=out_len, train=False),
                 transforms.RandomCrop(out_len=out_len, train=False)
             )
+
             self.spec_transforms = transforms.Compose(
                 torch.Tensor,
                 partial(torch.unsqueeze, dim=0),
@@ -128,51 +125,64 @@ class ESC50(data.Dataset):
         self.global_std = global_mean_std[1]
         self.n_mfcc = config.n_mfcc if hasattr(config, "n_mfcc") else None
 
-######################################################################################################
-        self.mel_transform = T.MelSpectrogram(
-            sample_rate=config.sr,
-            n_fft=2048,
-            hop_length=config.hop_length,
-            n_mels=config.n_mels,
-            power=2.0,        # power=2.0 für Energie, entspricht librosa
-        )
-        self.db_transform  = T.AmplitudeToDB()
-######################################################################################################
     def __len__(self):
         return len(self.file_names)
 
     def __getitem__(self, index):
-        # 1) Dateiname und Pfad
         file_name = self.file_names[index]
         path = os.path.join(self.root, file_name)
+        wave, rate = librosa.load(path, sr=config.sr)
 
-        # 2) Roh-Audio laden
-        wave, rate = librosa.load(path, sr=config.sr)  # wave: np.ndarray
+        # identifying the label of the sample from its name
+        temp = file_name.split('.')[0]
+        class_id = int(temp.split('-')[-1])
 
-        # 3) Label extrahieren
-        class_id = int(file_name.split('-')[-1].split('.')[0])
-
-        # 4) Dimensionalität sicherstellen: (1, Time)
         if wave.ndim == 1:
-            wave = wave[np.newaxis, :]  # → np.ndarray (1, Time)
+            wave = wave[:, np.newaxis]
 
-        # 5) Normierung
-        if np.abs(wave).max() > 1.0:
+        # normalizing waves to [-1, 1]
+        if np.abs(wave.max()) > 1.0:
             wave = transforms.scale(wave, wave.min(), wave.max(), -1.0, 1.0)
-        wave = wave * 32768.0
+        wave = wave.T * 32768.0
 
-        # 6) Stille abschneiden
-        nz = wave.nonzero()[1]
-        start, end = nz.min(), nz.max()
-        wave = wave[:, start : end+1]
+        # Remove silent sections
+        start = wave.nonzero()[1].min()
+        end = wave.nonzero()[1].max()
+        wave = wave[:, start: end + 1]
 
-        # 7) Augmentierung auf NumPy-Ebene, liefert bereits torch.Tensor
-        wave_tensor = self.wave_transforms(wave)  # → torch.Tensor (1, Time)
+        wave_copy = np.copy(wave)
+        wave_copy = self.wave_transforms(wave_copy)
+        wave_copy.squeeze_(0)
 
-        # 8) Sicherstellen, dass es FloatTensor ist
-        wave_tensor = wave_tensor.float()
+        if self.n_mfcc:
+            mfcc = librosa.feature.mfcc(y=wave_copy.numpy(),
+                                        sr=config.sr,
+                                        n_mels=config.n_mels,
+                                        n_fft=1024,
+                                        hop_length=config.hop_length,
+                                        n_mfcc=self.n_mfcc)
+            feat = mfcc
+        else:
+            s = librosa.feature.melspectrogram(y=wave_copy.numpy(),
+                                               sr=config.sr,
+                                               n_mels=config.n_mels,
+                                               n_fft=1024,
+                                               hop_length=config.hop_length,
+                                               #center=False,
+                                               )
+            log_s = librosa.power_to_db(s, ref=np.max)
 
-        return file_name, wave_tensor, class_id
+            # masking the spectrograms
+            log_s = self.spec_transforms(log_s)
+
+            feat = log_s
+
+        # normalize
+        if self.global_mean:
+            feat = (feat - self.global_mean) / self.global_std
+
+        return file_name, feat, class_id
+
 
 def get_global_stats(data_path):
     res = []

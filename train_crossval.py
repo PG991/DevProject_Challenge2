@@ -10,7 +10,7 @@ from tqdm import tqdm
 import sys
 from functools import partial
 
-from models.model_classifier import AudioResNet18
+from models.model_classifier import AudioMLP
 from models.utils import EarlyStopping, Tee
 from dataset.dataset_ESC50 import ESC50
 import config
@@ -184,7 +184,6 @@ if __name__ == "__main__":
                                                      num_workers=config.num_workers,
                                                      drop_last=False,
                                                      persistent_workers=config.persistent_workers,
-                                                     pin_memory=True,
                                                      )
 
             print()
