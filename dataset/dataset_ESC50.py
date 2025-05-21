@@ -140,38 +140,38 @@ class ESC50(data.Dataset):
     def __len__(self):
         return len(self.file_names)
 
-def __getitem__(self, index):
-    # 1) Dateiname und Pfad
-    file_name = self.file_names[index]
-    path = os.path.join(self.root, file_name)
+    def __getitem__(self, index):
+        # 1) Dateiname und Pfad
+        file_name = self.file_names[index]
+        path = os.path.join(self.root, file_name)
 
-    # 2) Roh-Audio laden (NumPy-Array)
-    wave, rate = librosa.load(path, sr=config.sr)
+        # 2) Roh-Audio laden (NumPy-Array)
+        wave, rate = librosa.load(path, sr=config.sr)
 
-    # 3) Label extrahieren
-    class_id = int(file_name.split('-')[-1].split('.')[0])
+        # 3) Label extrahieren
+        class_id = int(file_name.split('-')[-1].split('.')[0])
 
-    # 4) Dimensionalität sicherstellen: (1, Time)
-    if wave.ndim == 1:
-        wave = wave[np.newaxis, :]
+        # 4) Dimensionalität sicherstellen: (1, Time)
+        if wave.ndim == 1:
+            wave = wave[np.newaxis, :]
 
-    # 5) Normierung wie gehabt
-    if np.abs(wave).max() > 1.0:
-        wave = transforms.scale(wave, wave.min(), wave.max(), -1.0, 1.0)
-    wave = wave * 32768.0
+        # 5) Normierung wie gehabt
+        if np.abs(wave).max() > 1.0:
+            wave = transforms.scale(wave, wave.min(), wave.max(), -1.0, 1.0)
+        wave = wave * 32768.0
 
-    # 6) Stille abschneiden
-    nonzero = wave.nonzero()[1]
-    start, end = nonzero.min(), nonzero.max()
-    wave = wave[:, start : end + 1]
+        # 6) Stille abschneiden
+        nonzero = wave.nonzero()[1]
+        start, end = nonzero.min(), nonzero.max()
+        wave = wave[:, start : end + 1]
 
-    # 7) Wave-Augmentierung auf NumPy-Ebene
-    wave = self.wave_transforms(wave)  # → np.array (1, Time)
+        # 7) Wave-Augmentierung auf NumPy-Ebene
+        wave = self.wave_transforms(wave)  # → np.array (1, Time)
 
-    # 8) Konvertierung zu Torch-Tensor
-    wave_tensor = torch.from_numpy(wave).float()  # Shape: (1, Time)
+        # 8) Konvertierung zu Torch-Tensor
+        wave_tensor = torch.from_numpy(wave).float()  # Shape: (1, Time)
 
-    return file_name, wave_tensor, class_id
+        return file_name, wave_tensor, class_id
 
 
 def get_global_stats(data_path):
