@@ -14,7 +14,6 @@ from models.model_classifier import AudioResNet
 from models.utils import EarlyStopping, Tee
 from dataset.dataset_ESC50 import ESC50
 import config
-from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 
 
 # mean and std of train data for every fold
@@ -67,9 +66,9 @@ def train_epoch():
 
         # the forward pass through the model
         y_prob = model(x)
+
         # we could also use 'F.one_hot(y_true)' for 'y_true', but this would be slower
         loss = criterion(y_prob, y_true)
-
         # reset the gradients to zero - avoids accumulation
         optimizer.zero_grad()
         # compute the gradient with backpropagation
@@ -77,7 +76,7 @@ def train_epoch():
         losses.append(loss.item())
         # minimize the loss via the gradient - adapts the model parameters
         optimizer.step()
-        scheduler.step()
+
         y_pred = torch.argmax(y_prob, dim=1)
         corrects += (y_pred == y_true).sum().item()
         samples_count += y_true.shape[0]
@@ -170,39 +169,23 @@ if __name__ == "__main__":
             print(f'train folds are {train_set.train_folds} and test fold is {train_set.test_folds}')
             print('random wave cropping')
 
-            # train_loader = torch.utils.data.DataLoader(train_set,
-            #                                            batch_size=config.batch_size,
-            #                                            shuffle=True,
-            #                                            num_workers=config.num_workers,
-            #                                            drop_last=False,
-            #                                            persistent_workers=config.persistent_workers,
-            #                                            pin_memory=True,
-            #                                            )
-
-            # val_loader = torch.utils.data.DataLoader(get_fold_dataset(subset="val"),
-            #                                          batch_size=config.batch_size,
-            #                                          shuffle=False,
-            #                                          num_workers=config.num_workers,
-            #                                          drop_last=False,
-            #                                          persistent_workers=config.persistent_workers,
-            #                                          )
-
             train_loader = torch.utils.data.DataLoader(train_set,
-                                    batch_size=config.batch_size,
-                                    shuffle=True,
-                                    num_workers=config.num_workers,
-                                    pin_memory=True,
-                                    persistent_workers=config.persistent_workers,
-                                    prefetch_factor=4,
-            )
+                                                       batch_size=config.batch_size,
+                                                       shuffle=True,
+                                                       num_workers=config.num_workers,
+                                                       drop_last=False,
+                                                       persistent_workers=config.persistent_workers,
+                                                       pin_memory=True,
+                                                       )
 
             val_loader = torch.utils.data.DataLoader(get_fold_dataset(subset="val"),
-                                batch_size=config.batch_size,
-                                shuffle=False,
-                                num_workers=config.num_workers,
-                                pin_memory=True,
-                                persistent_workers=config.persistent_workers,
-            )
+                                                     batch_size=config.batch_size,
+                                                     shuffle=False,
+                                                     num_workers=config.num_workers,
+                                                     drop_last=False,
+                                                     persistent_workers=config.persistent_workers,
+                                                     pin_memory=True,
+                                                     )
 
             print()
             # instantiate model
@@ -212,78 +195,28 @@ if __name__ == "__main__":
             print('*****')
 
             # Define a loss function and optimizer
-            #criterion = nn.CrossEntropyLoss().to(device)
+            criterion = nn.CrossEntropyLoss().to(device)
 
-            criterion = nn.CrossEntropyLoss(label_smoothing=0.1).to(device) # was 0.1   
+            optimizer = torch.optim.SGD(model.parameters(),
+                                        lr=config.lr,
+                                        momentum=0.9,
+                                        weight_decay=config.weight_decay)
 
-
-            # optimizer = torch.optim.SGD(model.parameters(),
-            #                             lr=config.lr,
-            #                             momentum=0.9,
-            #                             weight_decay=config.weight_decay)
-            
-            optimizer = torch.optim.AdamW(model.parameters(),
-                            lr=config.lr,
-                            weight_decay=config.weight_decay)
-            
-            
-            # 1) warm-up über 10 Epochen von lr*1e-3 → lr
-            warmup_epochs = 10
-            scheduler_warmup = LinearLR(optimizer,
-                                    start_factor=1e-3,
-                                    total_iters=warmup_epochs)
-
-            # 2) Cosine‐Annealing für die restlichen Epochen auf eta_min=1e-6
-            scheduler_cosine = CosineAnnealingLR(optimizer,
-                                                T_max=config.epochs - warmup_epochs,
-                                                eta_min=1e-6)
-
-            # kombiniere beide
-            scheduler = SequentialLR(optimizer,
-                                    schedulers=[scheduler_warmup, scheduler_cosine],
-                                    milestones=[warmup_epochs])
-
-            
-            # scheduler = torch.optim.lr_scheduler.OneCycleLR(
-            #      optimizer,
-            #      max_lr=1e-2,
-            #      steps_per_epoch=len(train_loader),
-            #      epochs=config.epochs,
-            #      pct_start=0.3,
-            #      anneal_strategy='linear'
-            # )
-
-
-            # scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
-            #                                             step_size=config.step_size,
-            #                                             gamma=config.gamma)
-
-            #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.epochs)
-            
+            scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
+                                                        step_size=config.step_size,
+                                                        gamma=config.gamma)
 
             # fit the model using only training and validation data, no testing data allowed here
             print()
             fit_classifier()
 
             # tests
-            # test_loader = torch.utils.data.DataLoader(get_fold_dataset(subset="test"),
-            #                                           batch_size=config.batch_size,
-            #                                           shuffle=False,
-            #                                           num_workers=0,  # config.num_workers,
-            #                                           drop_last=False,
-            #                                           )
-
-            test_loader = torch.utils.data.DataLoader(
-                get_fold_dataset(subset="test"),
-                batch_size=config.batch_size,
-                shuffle=False,
-                num_workers=config.num_workers,          # z.B. 4
-                pin_memory=True,                         # für schnellere GPU-Übertragung
-                persistent_workers=config.persistent_workers,  # Worker zwischenspeichern
-                prefetch_factor=2,                       # lädt 2 Batches pro Worker vor
-                drop_last=False,
-            )
-
+            test_loader = torch.utils.data.DataLoader(get_fold_dataset(subset="test"),
+                                                      batch_size=config.batch_size,
+                                                      shuffle=False,
+                                                      num_workers=0,  # config.num_workers,
+                                                      drop_last=False,
+                                                      )
 
             print(f'\ntest {experiment}')
             test_acc, test_loss, _ = test(model, test_loader, criterion=criterion, device=device)

@@ -98,29 +98,17 @@ class ESC50(data.Dataset):
             # transforms can be applied on wave and spectral representation
             self.wave_transforms = transforms.Compose(
                 torch.Tensor,
-                #transforms.RandomScale(max_scale=1.25),
+                transforms.RandomScale(max_scale=1.25),
                 transforms.RandomPadding(out_len=out_len),
-                transforms.RandomCrop(out_len=out_len),
-                transforms.RandomScale(max_scale=1.2),    # zufällige Skalierung
-                transforms.RandomGain(max_gain_db=6.0),   # Lautstärke-Variation
-                transforms.RandomTimeShift(max_shift=0.1), # verschiebe um ±10% der Länge
-                transforms.RandomNoise(min_noise=0.0, max_noise=0.02),
+                transforms.RandomCrop(out_len=out_len)
             )
 
-            # self.spec_transforms = transforms.Compose(
-            #     # to Tensor and prepend singleton dim
-            #     #lambda x: torch.Tensor(x).unsqueeze(0),
-            #     # lambda non-pickleable, problem on windows, replace with partial function
-            #     torch.Tensor,
-            #     partial(torch.unsqueeze, dim=0),
-            # )
-
-            # importieren
-            # SpecAugment is a data augmentation method for speech recognition
             self.spec_transforms = transforms.Compose(
+                # to Tensor and prepend singleton dim
+                #lambda x: torch.Tensor(x).unsqueeze(0),
+                # lambda non-pickleable, problem on windows, replace with partial function
                 torch.Tensor,
                 partial(torch.unsqueeze, dim=0),
-                SpecAugment(time_mask_param=40, freq_mask_param=20, num_masks= 4)  # neue Zeile
             )
 
         else:
@@ -131,7 +119,6 @@ class ESC50(data.Dataset):
                 transforms.RandomPadding(out_len=out_len, train=False),
                 transforms.RandomCrop(out_len=out_len, train=False)
             )
-
             self.spec_transforms = transforms.Compose(
                 torch.Tensor,
                 partial(torch.unsqueeze, dim=0),
@@ -139,6 +126,7 @@ class ESC50(data.Dataset):
         self.global_mean = global_mean_std[0]
         self.global_std = global_mean_std[1]
         self.n_mfcc = config.n_mfcc if hasattr(config, "n_mfcc") else None
+
 ######################################################################################################
         self.mel_transform = T.MelSpectrogram(
             sample_rate=config.sr,
@@ -152,91 +140,38 @@ class ESC50(data.Dataset):
     def __len__(self):
         return len(self.file_names)
 
-    def __getitem__(self, index):
-        file_name = self.file_names[index]
-        path = os.path.join(self.root, file_name)
-        wave, rate = librosa.load(path, sr=config.sr)
+def __getitem__(self, index):
+    # 1) Dateiname und Pfad
+    file_name = self.file_names[index]
+    path = os.path.join(self.root, file_name)
 
-        # identifying the label of the sample from its name
-        temp = file_name.split('.')[0]
-        class_id = int(temp.split('-')[-1])
+    # 2) Roh-Audio laden (NumPy-Array)
+    wave, rate = librosa.load(path, sr=config.sr)
 
-        if wave.ndim == 1:
-            wave = wave[:, np.newaxis]
+    # 3) Label extrahieren
+    class_id = int(file_name.split('-')[-1].split('.')[0])
 
-        # normalizing waves to [-1, 1]
-        if np.abs(wave.max()) > 1.0:
-            wave = transforms.scale(wave, wave.min(), wave.max(), -1.0, 1.0)
-        wave = wave.T * 32768.0
+    # 4) Dimensionalität sicherstellen: (1, Time)
+    if wave.ndim == 1:
+        wave = wave[np.newaxis, :]
 
-        # Remove silent sections
-        start = wave.nonzero()[1].min()
-        end = wave.nonzero()[1].max()
-        wave = wave[:, start: end + 1]
+    # 5) Normierung wie gehabt
+    if np.abs(wave).max() > 1.0:
+        wave = transforms.scale(wave, wave.min(), wave.max(), -1.0, 1.0)
+    wave = wave * 32768.0
 
-        wave_copy = np.copy(wave)
-        wave_copy = self.wave_transforms(wave_copy)
-        wave_copy.squeeze_(0)
+    # 6) Stille abschneiden
+    nonzero = wave.nonzero()[1]
+    start, end = nonzero.min(), nonzero.max()
+    wave = wave[:, start : end + 1]
 
-        if self.n_mfcc:
-            mfcc = librosa.feature.mfcc(y=wave_copy.numpy(),
-                                        sr=config.sr,
-                                        n_mels=config.n_mels,
-                                        n_fft=1024,
-                                        hop_length=config.hop_length,
-                                        n_mfcc=self.n_mfcc)
-            feat = mfcc
-        else:
-            # wave_copy kommt aus wave_transforms und ist bereits ein Tensor
-            # (nach wave_copy.squeeze_(0) hat er Shape (T,))
-            wav = wave_copy.float() #
+    # 7) Wave-Augmentierung auf NumPy-Ebene
+    wave = self.wave_transforms(wave)  # → np.array (1, Time)
 
-            # Für MelSpectrogram brauchen wir Shape (1, T)
-            if wav.dim() == 1:
-                wav = wav.unsqueeze(0)        # -> (1, T)
+    # 8) Konvertierung zu Torch-Tensor
+    wave_tensor = torch.from_numpy(wave).float()  # Shape: (1, Time)
 
-            # 1) CPU: Mel-Spektrogramm und dB-Umwandlung
-            mel   = self.mel_transform(wav)   # -> (1, n_mels, n_steps)
-            log_s = self.db_transform(mel)    # -> (1, n_mels, n_steps)
-
-            # 2) CPU: SpecAugment & restliche spec_transforms
-            #spec = self.spec_transforms(log_s)  # -> (1, 1, n_mels, n_steps)
-
-            # 3) Überflüssiges Kanal-Dim entfernen
-            #spec = spec.squeeze(1)             # -> (1, n_mels, n_steps)
-
-            #feat = spec
-
-
-            if self.subset == "train":
-               log_s = SpecAugment(time_mask_param=20,
-                               freq_mask_param=10,
-                                num_masks=2)(log_s)
-            feat = log_s                       # -> (1, n_mels, n_steps)
-
-            feat = (feat - self.global_mean) / self.global_std
-
-
-
-            # s = librosa.feature.melspectrogram(y=wave_copy.numpy(),
-            #                                    sr=config.sr,
-            #                                    n_mels=config.n_mels,
-            #                                    n_fft=1024,
-            #                                    hop_length=config.hop_length,
-            #                                    center=False,
-            #                                    )
-            # log_s = librosa.power_to_db(s, ref=np.max)
-
-            # # masking the spectrograms
-            # log_s = self.spec_transforms(log_s)
-
-            # feat = log_s
-
-        # normalize
-        # if self.global_mean:
-        #     feat = (feat - self.global_mean) / self.global_std
-
-        return file_name, feat, class_id
+    return file_name, wave_tensor, class_id
 
 
 def get_global_stats(data_path):
