@@ -91,31 +91,31 @@ class AudioResNet18(nn.Module):
             layers.append(block(self.in_planes, planes, 1, drop_p))
         return nn.Sequential(*layers)
 
-def forward(self, wave):
-        #wave: Tensor of shape (B, 1, Time) bereits auf dem GPU-Device.
-        # 1) GPU-basiertes Mel-Spektrogramm
-        spec = self.mel_transform(wave)      # -> (B, n_mels, Time')
-        spec_db = self.db_transform(spec)    # -> (B, n_mels, Time')
+    def forward(self, wave):
+            #wave: Tensor of shape (B, 1, Time) bereits auf dem GPU-Device.
+            # 1) GPU-basiertes Mel-Spektrogramm
+            spec = self.mel_transform(wave)      # -> (B, n_mels, Time')
+            spec_db = self.db_transform(spec)    # -> (B, n_mels, Time')
 
-        # 2) Kanal-Dimension für ResNet einfügen
-        x = spec_db.unsqueeze(1)             # -> (B, 1, n_mels, Time')
+            # 2) Kanal-Dimension für ResNet einfügen
+            x = spec_db.unsqueeze(1)             # -> (B, 1, n_mels, Time')
 
-        # 3) ResNet-Stem
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.maxpool(x)
+            # 3) ResNet-Stem
+            x = self.conv1(x)
+            x = self.bn1(x)
+            x = self.relu(x)
+            x = self.maxpool(x)
 
-        # 4) ResNet-Blöcke
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
+            # 4) ResNet-Blöcke
+            x = self.layer1(x)
+            x = self.layer2(x)
+            x = self.layer3(x)
+            x = self.layer4(x)
 
-        # 5) Globales Pooling & Classifier
-        x = self.avgpool(x)                  # -> (B, 512, 1, 1)
-        x = torch.flatten(x, 1)              # -> (B, 512)
-        x = self.dropout(x)
-        x = self.fc(x)                       # -> (B, n_classes)
+            # 5) Globales Pooling & Classifier
+            x = self.avgpool(x)                  # -> (B, 512, 1, 1)
+            x = torch.flatten(x, 1)              # -> (B, 512)
+            x = self.dropout(x)
+            x = self.fc(x)                       # -> (B, n_classes)
 
-        return x
+            return x
