@@ -2,21 +2,27 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class BasicBlock(nn.Module):
-    expansion = 1
+def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
+    """3×3 convolution mit Padding"""
+    return nn.Conv2d(
+        in_planes, out_planes, kernel_size=3, stride=stride,
+        padding=dilation, groups=groups, bias=False, dilation=dilation
+    )
 
-    def __init__(self, in_channels, out_channels, stride=1, downsample=None):
+def conv1x1(in_planes, out_planes, stride=1):
+    """1×1 convolution"""
+    return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
+
+class BasicBlock(nn.Module):
+    expansion = 1  # Kanalzahl bleibt gleich
+
+    def __init__(self, in_planes, planes, stride=1, downsample=None):
         super().__init__()
-        # erster 3×3-Conv
-        self.conv1 = nn.Conv2d(in_channels, out_channels,
-                               kernel_size=3, stride=stride, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(out_channels)
-        # zweiter 3×3-Conv
-        self.conv2 = nn.Conv2d(out_channels, out_channels,
-                               kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU(inplace=True)
-        # falls wir die Residual-Verbindung skalieren müssen
+        self.conv1 = conv3x3(in_planes, planes, stride)
+        self.bn1   = nn.BatchNorm2d(planes)
+        self.relu  = nn.ReLU(inplace=True)
+        self.conv2 = conv3x3(planes, planes)
+        self.bn2   = nn.BatchNorm2d(planes)
         self.downsample = downsample
 
     def forward(self, x):
@@ -36,45 +42,58 @@ class BasicBlock(nn.Module):
         out = self.relu(out)
         return out
 
-
 class AudioResNet18(nn.Module):
-    def __init__(self, n_classes: int):
+    def __init__(self, n_classes: int = 50, zero_init_residual: bool = False):
         super().__init__()
-        self.in_channels = 16
-        # Initial-Layer (1-Kanal → 16 Kanäle)
-        self.conv1 = nn.Conv2d(1, 16, kernel_size=7, stride=2, padding=3, bias=False)
-        self.bn1   = nn.BatchNorm2d(16)
-        self.relu  = nn.ReLU(inplace=True)
+        norm_layer = nn.BatchNorm2d
+        self.inplanes = 16  # weniger Parameter als das 64er-Original
+
+        # Stem: 1-Kanal → 16 Kanäle
+        self.conv1   = nn.Conv2d(1, self.inplanes, kernel_size=7, stride=2, padding=3, bias=False)
+        self.bn1     = norm_layer(self.inplanes)
+        self.relu    = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
-        # die vier ResNet-Blöcke mit jeweils 2 BasicBlocks
-        self.layer1 = self._make_layer(16,  2, stride=1)
-        self.layer2 = self._make_layer(32,  2, stride=2)
-        self.layer3 = self._make_layer(64,  2, stride=2)
-        self.layer4 = self._make_layer(128, 2, stride=2)
+        # ResNet-Blöcke: jeweils 2 BasicBlocks
+        self.layer1 = self._make_layer(BasicBlock,  16, blocks=2, stride=1)
+        self.layer2 = self._make_layer(BasicBlock,  32, blocks=2, stride=2)
+        self.layer3 = self._make_layer(BasicBlock,  64, blocks=2, stride=2)
+        self.layer4 = self._make_layer(BasicBlock, 128, blocks=2, stride=2)
 
-        # globales Pooling + Klassifikations-Head
+        # Klassifikationskopf
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc      = nn.Linear(128 * BasicBlock.expansion, n_classes)
 
-    def _make_layer(self, out_channels, blocks, stride):
+        # Gewichtsinitialisierung
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+        # optional Zero-Init des letzten BatchNorm in jedem BasicBlock
+        if zero_init_residual:
+            for m in self.modules():
+                if isinstance(m, BasicBlock):
+                    nn.init.constant_(m.bn2.weight, 0)
+
+    def _make_layer(self, block, planes, blocks, stride=1):
+        norm_layer = nn.BatchNorm2d
         downsample = None
-        # Residual-Shortcut anpassen, falls nötig
-        if stride != 1 or self.in_channels != out_channels * BasicBlock.expansion:
+
+        # Shortcut ändern, falls sich Spatial-Size oder Kanalzahl ändert
+        if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                nn.Conv2d(self.in_channels,
-                          out_channels * BasicBlock.expansion,
-                          kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(out_channels * BasicBlock.expansion),
+                conv1x1(self.inplanes, planes * block.expansion, stride),
+                norm_layer(planes * block.expansion),
             )
 
         layers = []
-        # erster Block mit evtl. Downsample
-        layers.append(BasicBlock(self.in_channels, out_channels, stride, downsample))
-        self.in_channels = out_channels * BasicBlock.expansion
-        # weitere Blocks
+        layers.append(block(self.inplanes, planes, stride, downsample))
+        self.inplanes = planes * block.expansion
         for _ in range(1, blocks):
-            layers.append(BasicBlock(self.in_channels, out_channels))
+            layers.append(block(self.inplanes, planes))
 
         return nn.Sequential(*layers)
 
@@ -90,7 +109,7 @@ class AudioResNet18(nn.Module):
         x = self.layer3(x)
         x = self.layer4(x)
 
-        x = self.avgpool(x)            # [B, C, 1, 1]
-        x = torch.flatten(x, 1)        # [B, C]
-        x = self.fc(x)                 # [B, n_classes]
+        x = self.avgpool(x)          # [B, 128, 1, 1]
+        x = torch.flatten(x, 1)      # [B, 128]
+        x = self.fc(x)               # [B, 50]
         return x
