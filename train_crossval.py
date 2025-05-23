@@ -16,6 +16,11 @@ from dataset.dataset_ESC50 import ESC50
 import config
 
 
+print("CUDA verfügbar:", torch.cuda.is_available())
+print("Anzahl CUDA-Devices:", torch.cuda.device_count())
+if torch.cuda.is_available():
+    print("GPU-Name:", torch.cuda.get_device_name(0))
+
 # mean and std of train data for every fold
 global_stats = np.array([[-54.364834, 20.853344],
                          [-54.279022, 20.847532],
