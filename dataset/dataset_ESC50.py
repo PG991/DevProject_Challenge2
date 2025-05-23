@@ -55,6 +55,10 @@ def download_progress(current, total, width=80):
 class ESC50(data.Dataset):
 
     def __init__(self, root, test_folds=frozenset((1,)), subset="train", global_mean_std=(0.0, 1.0), download=False):
+        self.fold_id = min(test_folds)
+        self.cache_root = os.path.join(root, "cached", f"fold_{self.fold_id}", subset)
+        os.makedirs(self.cache_root, exist_ok=True)
+
         audio = 'ESC-50-master/audio'
         root = os.path.normpath(root)
         audio = os.path.join(root, audio)
@@ -78,6 +82,7 @@ class ESC50(data.Dataset):
         self.train_folds = folds - test_folds
         train_files = [f for f in temp if int(f.split('-')[0]) in self.train_folds]
         test_files = [f for f in temp if int(f.split('-')[0]) in test_folds]
+
         # sanity check
         assert set(temp) == (set(train_files) | set(test_files))
         if subset == "test":
@@ -89,6 +94,7 @@ class ESC50(data.Dataset):
                 self.file_names = train_files
             else:
                 self.file_names = val_files
+
         # the number of samples in the wave (=length) required for spectrogram
         out_len = int(((config.sr * 5) // config.hop_length) * config.hop_length)
         train = self.subset == "train"
@@ -106,8 +112,8 @@ class ESC50(data.Dataset):
                 # to Tensor and prepend singleton dim
                 #lambda x: torch.Tensor(x).unsqueeze(0),
                 # lambda non-pickleable, problem on windows, replace with partial function
-                torch.Tensor,
-                partial(torch.unsqueeze, dim=0),
+                # torch.Tensor,
+                # partial(torch.unsqueeze, dim=0),
                 SpecAugment(time_mask_param=30, freq_mask_param=13),
             )
 
@@ -135,6 +141,66 @@ class ESC50(data.Dataset):
         file_name = self.file_names[index]
         path = os.path.join(self.root, file_name)
         wave, rate = librosa.load(path, sr=config.sr)
+
+        cache_path = os.path.join(self.cache_root, f"{file_name}.pt")
+        os.makedirs(self.cache_root, exist_ok=True)
+        
+        # check if the cache exists
+        # if it does, load the spectrogram and class id from the cache
+        log_s, class_id = None, None
+        if os.path.exists(cache_path):
+            try:
+                cached = torch.load(cache_path, weights_only=False)
+                log_s = cached.get("spec", None)
+                class_id = cached.get("class_id", None)
+                if log_s is None or class_id is None:
+                    raise ValueError("Invalid cache content")
+            except Exception as e:
+                print(f"[CACHE ERROR] {file_name}: {e}")
+                os.remove(cache_path)
+
+            # if the cache does not exist, compute the spectrogram and class id
+            if log_s is None:
+                wave, rate = librosa.load(path, sr=config.sr)
+                class_id = int(file_name.split('.')[0].split('-')[-1])
+
+                if wave.ndim == 1:
+                    wave = wave[:, np.newaxis]
+                if np.abs(wave.max()) > 1.0:
+                    wave = transforms.scale(wave, wave.min(), wave.max(), -1.0, 1.0)
+                wave = wave.T * 32768.0
+
+                start = wave.nonzero()[1].min()
+                end = wave.nonzero()[1].max()
+                wave = wave[:, start:end + 1]
+
+                wave_copy = np.copy(wave)
+                wave_copy = self.wave_transforms(wave_copy)
+                wave_copy.squeeze_(0)
+
+                s = librosa.feature.melspectrogram(
+                    y=wave_copy.numpy(),
+                    sr=config.sr,
+                    n_mels=config.n_mels,
+                    n_fft=1024,
+                    hop_length=config.hop_length,
+                    center=False
+                )
+                log_s = librosa.power_to_db(s, ref=np.max)
+                torch.save({"spec": log_s, "class_id": class_id}, cache_path)
+
+            # Augmentierung und Tensor-Formatierung
+            if self.subset == "train":
+                feat = self.spec_transforms(torch.Tensor(log_s))
+                feat = feat.unsqueeze(0)
+            else:
+                feat = torch.Tensor(log_s).unsqueeze(0)
+
+            if self.global_mean:
+                feat = (feat - self.global_mean) / self.global_std
+
+            return file_name, feat, class_id
+
 
         # identifying the label of the sample from its name
         temp = file_name.split('.')[0]
