@@ -29,7 +29,7 @@ device_id = 0
 batch_size = 64
 # in Colab to avoid Warning
 
-num_workers = 1
+num_workers = 4
 #num_workers = 4
 #num_workers = 0
 
