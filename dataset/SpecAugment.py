@@ -12,6 +12,6 @@ class SpecAugment(torch.nn.Module):
     def forward(self, x):
         x = x.clone()
         for _ in range(self.num_masks):
-            x = T.TimeMasking(self.time_mask_param)(x)
-            x = T.FrequencyMasking(self.freq_mask_param)(x)
+            x = T.TimeMasking(time_mask_param=self.time_mask_param)(x)
+            x = T.FrequencyMasking(freq_mask_param=self.freq_mask_param)(x)
         return x
