@@ -82,7 +82,7 @@ def train_epoch():
     #     x = x.float().to(device)
     #     y_true = label.to(device)         --> original code
 
-    for _, x, label in tqdm(train_loader, ...):
+    for _, x, label in tqdm(train_loader, unit='bat', disable=config.disable_bat_pbar, position=0):
         x = x.float().to(device)
         y_true = label.to(device)
         # Mixup-Anwendung
