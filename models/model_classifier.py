@@ -20,7 +20,7 @@ class BasicBlock(nn.Module):
         self.relu  = nn.ReLU(inplace=True)
         self.conv2 = conv3x3(planes, planes)
         self.bn2   = nn.BatchNorm2d(planes)
-        self.dropout = nn.Dropout(p=0.2)
+        self.dropout = nn.Dropout(p=0.25)
         self.downsample = downsample
 
     def forward(self, x):
