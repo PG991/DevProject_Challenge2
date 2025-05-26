@@ -21,6 +21,19 @@ print("Anzahl CUDA-Devices:", torch.cuda.device_count())
 if torch.cuda.is_available():
     print("GPU-Name:", torch.cuda.get_device_name(0))
 
+
+def mixup_data(x, y, alpha=0.4):
+    """Returns mixed inputs, pairs of targets, and lambda"""
+    if alpha > 0:
+        lam = np.random.beta(alpha, alpha)
+    else:
+        lam = 1
+    batch_size = x.size(0)
+    index = torch.randperm(batch_size).to(x.device)
+    mixed_x = lam * x + (1 - lam) * x[index, :]
+    y_a, y_b = y, y[index]
+    return mixed_x, y_a, y_b, lam
+
 # mean and std of train data for every fold
 global_stats = np.array([[-54.364834, 20.853344],
                          [-54.279022, 20.847532],
@@ -65,15 +78,28 @@ def train_epoch():
     losses = []
     corrects = 0
     samples_count = 0
-    for _, x, label in tqdm(train_loader, unit='bat', disable=config.disable_bat_pbar, position=0):
+    # for _, x, label in tqdm(train_loader, unit='bat', disable=config.disable_bat_pbar, position=0):
+    #     x = x.float().to(device)
+    #     y_true = label.to(device)         --> original code
+
+    for _, x, label in tqdm(train_loader, ...):
         x = x.float().to(device)
         y_true = label.to(device)
+        # Mixup-Anwendung
+        x, y_a, y_b, lam = mixup_data(x, y_true, alpha=0.4)
 
-        # the forward pass through the model
+
+        # # the forward pass through the model
+        # y_prob = model(x)
+        # # we could also use 'F.one_hot(y_true)' for 'y_true', but this would be slower
+        # loss = criterion(y_prob, y_true)
+
+
         y_prob = model(x)
+        # gemischter Loss
+        loss = lam * criterion(y_prob, y_a) + (1 - lam) * criterion(y_prob, y_b)
 
-        # we could also use 'F.one_hot(y_true)' for 'y_true', but this would be slower
-        loss = criterion(y_prob, y_true)
+
         # reset the gradients to zero - avoids accumulation
         optimizer.zero_grad()
         # compute the gradient with backpropagation
@@ -82,9 +108,14 @@ def train_epoch():
         # minimize the loss via the gradient - adapts the model parameters
         optimizer.step()
 
+        # y_pred = torch.argmax(y_prob, dim=1)
+        # corrects += (y_pred == y_true).sum().item()
+        # samples_count += y_true.shape[0]
+
+
         y_pred = torch.argmax(y_prob, dim=1)
-        corrects += (y_pred == y_true).sum().item()
-        samples_count += y_true.shape[0]
+        corrects += (y_pred == y_a).sum().item()
+        samples_count += y_a.shape[0]
 
     acc = corrects / samples_count
     return acc, losses
