@@ -22,7 +22,7 @@ if torch.cuda.is_available():
     print("GPU-Name:", torch.cuda.get_device_name(0))
 
 
-def mixup_data(x, y, alpha=0.3):
+def mixup_data(x, y, alpha=0.2):
     """Returns mixed inputs, pairs of targets, and lambda"""
     if alpha > 0:
         lam = np.random.beta(alpha, alpha)
@@ -78,44 +78,37 @@ def train_epoch():
     losses = []
     corrects = 0
     samples_count = 0
+
     # for _, x, label in tqdm(train_loader, unit='bat', disable=config.disable_bat_pbar, position=0):
     #     x = x.float().to(device)
     #     y_true = label.to(device)         --> original code
 
-    for _, x, label in tqdm(train_loader, unit='bat', disable=config.disable_bat_pbar, position=0):
+    for _, x, label in tqdm(train_loader, unit='bat',
+                            disable=config.disable_bat_pbar, position=0):
         x = x.float().to(device)
         y_true = label.to(device)
-        # Mixup-Anwendung
-        x, y_a, y_b, lam = mixup_data(x, y_true, alpha=0.4)
 
+        # Mixup anwenden
+        x_mix, y_a, y_b, lam = mixup_data(x, y_true, alpha=0.2)
 
-        # # the forward pass through the model
-        # y_prob = model(x)
-        # # we could also use 'F.one_hot(y_true)' for 'y_true', but this would be slower
-        # loss = criterion(y_prob, y_true)
+        # Forward + gemischter Loss
+        y_prob = model(x_mix)
+        loss   = lam * criterion(y_prob, y_a) + (1 - lam) * criterion(y_prob, y_b)
 
-
-        y_prob = model(x)
-        # gemischter Loss
-        loss = lam * criterion(y_prob, y_a) + (1 - lam) * criterion(y_prob, y_b)
-
-
-        # reset the gradients to zero - avoids accumulation
         optimizer.zero_grad()
-        # compute the gradient with backpropagation
         loss.backward()
-        losses.append(loss.item())
-        # minimize the loss via the gradient - adapts the model parameters
         optimizer.step()
 
-        # y_pred = torch.argmax(y_prob, dim=1)
-        # corrects += (y_pred == y_true).sum().item()
-        # samples_count += y_true.shape[0]
+        losses.append(loss.item())
 
-
+        # Mixup-gerechte Acc-Berechnung
         y_pred = torch.argmax(y_prob, dim=1)
-        corrects += (y_pred == y_a).sum().item()
-        samples_count += y_a.shape[0]
+        batch_acc = (
+            lam * (y_pred == y_a).float()
+          + (1-lam) * (y_pred == y_b).float()
+        ).sum().item()  # Summe über Batch
+        corrects      += batch_acc
+        samples_count += x.size(0)
 
     acc = corrects / samples_count
     return acc, losses
@@ -232,7 +225,7 @@ if __name__ == "__main__":
             # Define a loss function and optimizer
             criterion = nn.CrossEntropyLoss().to(device)
 
-            optimizer = torch.optim.AdamW(model.parameters(),
+            optimizer = torch.optim.RAdam(model.parameters(),
                                             lr=config.lr,
                                             weight_decay=config.weight_decay,
             )
