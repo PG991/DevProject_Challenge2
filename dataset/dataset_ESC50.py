@@ -12,8 +12,6 @@ import librosa
 import config
 from . import transforms
 from .SpecAugment import SpecAugment
-import torchaudio.transforms as T_audio
-import torch.nn as nn
 
 # CUDA for PyTorch
 use_cuda = torch.cuda.is_available()
@@ -103,44 +101,31 @@ class ESC50(data.Dataset):
                 transforms.RandomCrop(out_len=out_len)
             )
 
-            self.mel_transform = T_audio.MelSpectrogram(
-                sample_rate=config.sr,
-                n_fft=1024,
-                hop_length=config.hop_length,
-                n_mels=config.n_mels,
-                power=2.0
-            )
-            self.db_transform = T_audio.AmplitudeToDB()
-
             self.spec_transforms = transforms.Compose(
-                SpecAugment(time_mask_param=30, freq_mask_param=13)
+                # to Tensor and prepend singleton dim
+                #lambda x: torch.Tensor(x).unsqueeze(0),
+                # lambda non-pickleable, problem on windows, replace with partial function
+                torch.Tensor,
+                partial(torch.unsqueeze, dim=0),
+                SpecAugment(time_mask_param=30, freq_mask_param=13),
             )
-            
 
         else:
-            # gleiche Wave-Transforms ohne Zufall
+            # for testing transforms are applied deterministically to support reproducible scores
             self.wave_transforms = transforms.Compose(
                 torch.Tensor,
+                # disable randomness
                 transforms.RandomPadding(out_len=out_len, train=False),
                 transforms.RandomCrop(out_len=out_len, train=False)
             )
-            # auch im Test Mel+Log berechnen, aber ohne Augment
-            self.mel_transform = T_audio.MelSpectrogram(
-                sample_rate=config.sr,
-                n_fft=1024,
-                hop_length=config.hop_length,
-                n_mels=config.n_mels,
-                power=2.0,
+
+            self.spec_transforms = transforms.Compose(
+                torch.Tensor,
+                partial(torch.unsqueeze, dim=0),
             )
-            self.db_transform = T_audio.AmplitudeToDB()
-
-            # im Val/Test keine SpecAugment
-            self.spec_transforms = nn.Identity()
-
-
         self.global_mean = global_mean_std[0]
         self.global_std = global_mean_std[1]
-        # self.n_mfcc = config.n_mfcc if hasattr(config, "n_mfcc") else None
+        self.n_mfcc = config.n_mfcc if hasattr(config, "n_mfcc") else None
 
     def __len__(self):
         return len(self.file_names)
@@ -171,33 +156,34 @@ class ESC50(data.Dataset):
         wave_copy = self.wave_transforms(wave_copy)
         wave_copy.squeeze_(0)
 
-        if isinstance(wave_copy, np.ndarray):
-            wave_tensor = torch.from_numpy(wave_copy).float()
+        if self.n_mfcc:
+            mfcc = librosa.feature.mfcc(y=wave_copy.numpy(),
+                                        sr=config.sr,
+                                        n_mels=config.n_mels,
+                                        n_fft=1024,
+                                        hop_length=config.hop_length,
+                                        n_mfcc=self.n_mfcc)
+            feat = mfcc
         else:
-            wave_tensor = wave_copy  # falls schon Tensor
+            s = librosa.feature.melspectrogram(y=wave_copy.numpy(),
+                                               sr=config.sr,
+                                               n_mels=config.n_mels,
+                                               n_fft=1024,
+                                               hop_length=config.hop_length,
+                                               #center=False,
+                                               )
+            log_s = librosa.power_to_db(s, ref=np.max)
 
-        # 2) Channel-Dim hinzufügen: [Time] → [1, Time]
-        if wave_tensor.dim() == 1:
-            wave_tensor = wave_tensor.unsqueeze(0)
+            # masking the spectrograms
+            log_s = self.spec_transforms(log_s)
 
-        # 3) Mel-Spektrogramm & Log-Scaling
-        mel_spec = self.mel_transform(wave_tensor)  # → [1, n_mels, T]
-        log_mel  = self.db_transform(mel_spec)      # → [1, n_mels, T]
+            feat = log_s
 
-        # 4) SpecAugment (oder Identity im Val/Test)
-        spec_aug = self.spec_transforms(log_mel)    # → [1, n_mels, T]
-
-        # 5) Globale Normalisierung
-        feat = (spec_aug - self.global_mean) / self.global_std
+        # normalize
+        if self.global_mean:
+            feat = (feat - self.global_mean) / self.global_std
 
         return file_name, feat, class_id
-
-
-        # # normalize
-        # if self.global_mean:
-        #     feat = (feat - self.global_mean) / self.global_std
-
-        # return file_name, feat, class_id
 
 
 def get_global_stats(data_path):
