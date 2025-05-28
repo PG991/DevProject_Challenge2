@@ -53,7 +53,7 @@ def download_progress(current, total, width=80):
 
 class ESC50(data.Dataset):
 
-    def __init__(self, root, test_folds=frozenset((1,)), subset="train", global_mean_std=(0.0, 0.0), download=False):
+    def __init__(self, root, test_folds=frozenset((1,)), subset="train", global_mean_std=(0.0, 1.0), download=False):
         audio = 'ESC-50-master/audio'
         root = os.path.normpath(root)
         audio = os.path.join(root, audio)
@@ -101,16 +101,15 @@ class ESC50(data.Dataset):
                 transforms.RandomCrop(out_len=out_len)
             )
 
-            # self.spec_transforms = transforms.Compose(
-            #     # to Tensor and prepend singleton dim
-            #     #lambda x: torch.Tensor(x).unsqueeze(0),
-            #     # lambda non-pickleable, problem on windows, replace with partial function
-            #     torch.Tensor,
-            #     partial(torch.unsqueeze, dim=0),
-            # )
             self.spec_transforms = transforms.Compose(
-                SpecAugment(time_mask_param=30, freq_mask_param=13)
+                # to Tensor and prepend singleton dim
+                #lambda x: torch.Tensor(x).unsqueeze(0),
+                # lambda non-pickleable, problem on windows, replace with partial function
+                torch.Tensor,
+                partial(torch.unsqueeze, dim=0),
+                SpecAugment(time_mask_param=30, freq_mask_param=13),
             )
+
         else:
             # for testing transforms are applied deterministically to support reproducible scores
             self.wave_transforms = transforms.Compose(
@@ -187,12 +186,9 @@ class ESC50(data.Dataset):
         return file_name, feat, class_id
 
 
-
-
 def get_global_stats(data_path):
     res = []
     for i in range(1, 6):
         train_set = ESC50(subset="train", test_folds={i}, root=data_path, download=True)
         a = torch.concatenate([v[1] for v in tqdm(train_set)])
         res.append((a.mean(), a.std()))
-    return np.array(res)
