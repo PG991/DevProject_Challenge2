@@ -54,9 +54,6 @@ def download_progress(current, total, width=80):
 class ESC50(data.Dataset):
 
     def __init__(self, root, test_folds=frozenset((1,)), subset="train", global_mean_std=(0.0, 0.0), download=False):
-        self.fold_id = min(test_folds)
-        self.cache_root = os.path.join(root, "cached_features", f"fold_{self.fold_id}", subset)
-        os.makedirs(self.cache_root, exist_ok=True)
         audio = 'ESC-50-master/audio'
         root = os.path.normpath(root)
         audio = os.path.join(root, audio)
@@ -137,59 +134,53 @@ class ESC50(data.Dataset):
     def __getitem__(self, index):
         file_name = self.file_names[index]
         path = os.path.join(self.root, file_name)
+        wave, rate = librosa.load(path, sr=config.sr)
 
-        cache_path = os.path.join(self.cache_root, f"{file_name}.pt")
-        os.makedirs(self.cache_root, exist_ok=True)
+        # identifying the label of the sample from its name
+        temp = file_name.split('.')[0]
+        class_id = int(temp.split('-')[-1])
 
-        log_s, class_id = None, None
-        if os.path.exists(cache_path):
-            try:
-                cached = torch.load(cache_path, weights_only=False)
-                log_s = cached.get("spec", None)
-                class_id = cached.get("class_id", None)
-                if log_s is None or class_id is None:
-                    raise ValueError("Invalid cache content")
-            except Exception as e:
-                print(f"[CACHE ERROR] {file_name}: {e}")
-                os.remove(cache_path)
+        if wave.ndim == 1:
+            wave = wave[:, np.newaxis]
 
-        # Wenn Cache fehlt oder Fehlerhaft: neu berechnen
-        if log_s is None:
-            wave, rate = librosa.load(path, sr=config.sr)
-            class_id = int(file_name.split('.')[0].split('-')[-1])
+        # normalizing waves to [-1, 1]
+        if np.abs(wave.max()) > 1.0:
+            wave = transforms.scale(wave, wave.min(), wave.max(), -1.0, 1.0)
+        wave = wave.T * 32768.0
 
-            if wave.ndim == 1:
-                wave = wave[:, np.newaxis]
-            if np.abs(wave.max()) > 1.0:
-                wave = transforms.scale(wave, wave.min(), wave.max(), -1.0, 1.0)
-            wave = wave.T * 32768.0
+        # Remove silent sections
+        start = wave.nonzero()[1].min()
+        end = wave.nonzero()[1].max()
+        wave = wave[:, start: end + 1]
 
-            start = wave.nonzero()[1].min()
-            end = wave.nonzero()[1].max()
-            wave = wave[:, start:end + 1]
+        wave_copy = np.copy(wave)
+        wave_copy = self.wave_transforms(wave_copy)
+        wave_copy.squeeze_(0)
 
-            wave_copy = np.copy(wave)
-            wave_copy = self.wave_transforms(wave_copy)
-            wave_copy.squeeze_(0)
-
-            s = librosa.feature.melspectrogram(
-                y=wave_copy.numpy(),
-                sr=config.sr,
-                n_mels=config.n_mels,
-                n_fft=1024,
-                hop_length=config.hop_length,
-                center=False
-            )
-            log_s = librosa.power_to_db(s, ref=np.max)
-            torch.save({"spec": log_s, "class_id": class_id}, cache_path)
-
-        # Augmentierung und Tensor-Formatierung
-        if self.subset == "train":
-            feat = self.spec_transforms(torch.Tensor(log_s))
-            feat = feat.unsqueeze(0)
+        if self.n_mfcc:
+            mfcc = librosa.feature.mfcc(y=wave_copy.numpy(),
+                                        sr=config.sr,
+                                        n_mels=config.n_mels,
+                                        n_fft=1024,
+                                        hop_length=config.hop_length,
+                                        n_mfcc=self.n_mfcc)
+            feat = mfcc
         else:
-            feat = torch.Tensor(log_s).unsqueeze(0)
+            s = librosa.feature.melspectrogram(y=wave_copy.numpy(),
+                                               sr=config.sr,
+                                               n_mels=config.n_mels,
+                                               n_fft=1024,
+                                               hop_length=config.hop_length,
+                                               #center=False,
+                                               )
+            log_s = librosa.power_to_db(s, ref=np.max)
 
+            # masking the spectrograms
+            log_s = self.spec_transforms(log_s)
+
+            feat = log_s
+
+        # normalize
         if self.global_mean:
             feat = (feat - self.global_mean) / self.global_std
 
