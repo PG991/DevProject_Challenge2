@@ -12,7 +12,6 @@ import librosa
 import config
 from . import transforms
 from .SpecAugment import SpecAugment
-from audiomentations import Compose, AddGaussianNoise, TimeStretch, PitchShift
 
 
 # CUDA for PyTorch
@@ -51,13 +50,6 @@ def download_progress(current, total, width=80):
     # Don't use print() as it will print in new line every time.
     sys.stdout.write("\r" + progress_message)
     sys.stdout.flush()
-
-augment = Compose([
-    AddGaussianNoise(min_amplitude=0.01, max_amplitude=0.15, p=0.5),
-    TimeStretch(min_rate=0.8,    max_rate=1.25, p=0.5),
-    PitchShift(min_semitones=-4, max_semitones=4, p=0.5),
-])
-
 
 class ESC50(data.Dataset):
 
@@ -143,10 +135,16 @@ class ESC50(data.Dataset):
         path = os.path.join(self.root, file_name)
         wave, rate = librosa.load(path, sr=config.sr)
 
-        if self.subset == "train":            
-            # expects numpy array shape (time,)            
-            wave = augment(samples=wave, sample_rate=rate)
-
+        if self.subset == "train":
+            # 1) Gaussian Noise
+            noise_amp = np.random.uniform(0.01, 0.15) * np.random.randn(len(wave))
+            wave = wave + noise_amp
+            # 2) Time Stretch (Tempo variieren)
+            stretch = np.random.uniform(0.8, 1.25)
+            wave = librosa.effects.time_stretch(wave, rate=stretch)
+            # 3) Pitch Shift (Tonhöhe variieren)
+            n_steps = np.random.uniform(-4, 4)
+            wave = librosa.effects.pitch_shift(wave, sr=rate, n_steps=n_steps)
 
         # identifying the label of the sample from its name
         temp = file_name.split('.')[0]
