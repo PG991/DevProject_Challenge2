@@ -98,7 +98,7 @@ def train_epoch():
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-
+        scheduler.step() # advance the optimization scheduler
         losses.append(loss.item())
 
         # Mixup-gerechte Acc-Berechnung
@@ -149,7 +149,7 @@ def fit_classifier():
             break
 
         # advance the optimization scheduler
-        scheduler.step()
+        #scheduler.step()
     # save full model
     torch.save(model.state_dict(), os.path.join(experiment, 'terminal.pt'))
 
@@ -225,19 +225,14 @@ if __name__ == "__main__":
             # Define a loss function and optimizer
             criterion = nn.CrossEntropyLoss().to(device)
 
-            optimizer = torch.optim.RAdam(model.parameters(),
-                                            lr=config.lr,
-                                            weight_decay=config.weight_decay,
+            optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
+            scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                optimizer,
+                max_lr=1e-3,
+                total_steps=config.epochs * len(train_loader),
+                pct_start=0.1,
+                anneal_strategy='cos',
             )
-
-            # scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
-            #                                             step_size=config.step_size,
-            #                                             gamma=config.gamma)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                                                                    optimizer, 
-                                                                    T_max=config.epochs, 
-                                                                    eta_min=1e-5
-)
 
             # fit the model using only training and validation data, no testing data allowed here
             print()

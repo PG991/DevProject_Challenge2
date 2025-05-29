@@ -12,6 +12,8 @@ import librosa
 import config
 from . import transforms
 from .SpecAugment import SpecAugment
+from audiomentations import Compose, AddGaussianNoise, TimeStretch, PitchShift
+
 
 # CUDA for PyTorch
 use_cuda = torch.cuda.is_available()
@@ -49,6 +51,12 @@ def download_progress(current, total, width=80):
     # Don't use print() as it will print in new line every time.
     sys.stdout.write("\r" + progress_message)
     sys.stdout.flush()
+
+augment = Compose([
+    AddGaussianNoise(min_amplitude=0.01, max_amplitude=0.15, p=0.5),
+    TimeStretch(min_rate=0.8,    max_rate=1.25, p=0.5),
+    PitchShift(min_semitones=-4, max_semitones=4, p=0.5),
+])
 
 
 class ESC50(data.Dataset):
@@ -134,6 +142,11 @@ class ESC50(data.Dataset):
         file_name = self.file_names[index]
         path = os.path.join(self.root, file_name)
         wave, rate = librosa.load(path, sr=config.sr)
+
+        if self.subset == "train":            
+            # expects numpy array shape (time,)            
+            wave = augment(samples=wave, sample_rate=rate)
+
 
         # identifying the label of the sample from its name
         temp = file_name.split('.')[0]
