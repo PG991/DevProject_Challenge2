@@ -36,9 +36,9 @@ class BasicBlock(nn.Module):
         out = self.relu(out)
         return out
 
-class Resnet18(nn.Module):
+class AudioResNet18(nn.Module):
     def __init__(self, num_classes=50, dropout=0.3):
-        super(Resnet18, self).__init__()
+        super(AudioResNet18, self).__init__()
         self.in_planes = 64
 
         self.conv1 = nn.Conv2d(1, 64, kernel_size=(3, 7), stride=(1, 2), padding=(1, 3), bias=False)
