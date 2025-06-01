@@ -48,7 +48,7 @@ class BasicBlock(nn.Module):
         out = self.relu(out)
         return out
 
-class AudioResNet14(nn.Module):
+class AudioResNet18(nn.Module):
     """
     ResNet-14 variant for 1-channel log-Mel-spectrogram input.
     Uses 2 blocks per layer (total conv layers: 1 + 2*4 = 9, plus final FC → ≈14 layers).
