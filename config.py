@@ -16,8 +16,8 @@ test_folds = [1, 2, 3, 4, 5]
 
 # sampling rate for waves
 sr = 44100
-n_mels = 64
-hop_length = 256
+n_mels = 128
+hop_length = 512  # 256 samples per hop
 #n_mfcc = 42
 
 model_constructor = "AudioResNet18(n_classes=config.n_classes)"
@@ -41,7 +41,7 @@ epochs = 150
 # early stopping after epochs with no improvement
 patience = 20
 #lr = 1e-3
-lr = 1e-4
+lr = 1e-3
 weight_decay = 1e-3
 warm_epochs = 10
 gamma = 0.9

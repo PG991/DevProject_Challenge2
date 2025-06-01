@@ -89,7 +89,7 @@ def train_epoch():
         y_true = label.to(device)
 
         # Mixup anwenden
-        x_mix, y_a, y_b, lam = mixup_data(x, y_true, alpha=0.2)
+        #x_mix, y_a, y_b, lam = mixup_data(x, y_true, alpha=0.2)
 
         # Forward + gemischter Loss
         y_prob = model(x_mix)

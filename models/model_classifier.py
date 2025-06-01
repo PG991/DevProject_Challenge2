@@ -1,123 +1,81 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
-def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
-    return nn.Conv2d(
-        in_planes, out_planes, kernel_size=3, stride=stride,
-        padding=dilation, groups=groups, bias=False, dilation=dilation
-    )
-
-def conv1x1(in_planes, out_planes, stride=1):
-    return nn.Conv2d(in_planes, out_planes, kernel_size=1,
-                     stride=stride, bias=False)
+def conv3x3(in_planes, out_planes, stride=1):
+    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False)
 
 class BasicBlock(nn.Module):
-    """Gleich wie in deinem AudioResNet18."""
     expansion = 1
 
-    def __init__(self, in_planes, planes, stride=1, downsample=None):
-        super().__init__()
+    def __init__(self, in_planes, planes, stride=1, se=True, dropout=0.0):
+        super(BasicBlock, self).__init__()
         self.conv1 = conv3x3(in_planes, planes, stride)
-        self.bn1   = nn.BatchNorm2d(planes)
-        self.relu  = nn.ReLU(inplace=True)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.relu = nn.ReLU(inplace=True)
+        self.dropout = nn.Dropout(p=dropout) if dropout > 0 else nn.Identity()
         self.conv2 = conv3x3(planes, planes)
-        self.bn2   = nn.BatchNorm2d(planes)
-        self.dropout = nn.Dropout(p=0.25)
-        self.downsample = downsample
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.se = nn.Identity()
+
+        self.downsample = None
+        if stride != 1 or in_planes != planes:
+            self.downsample = nn.Sequential(
+                nn.Conv2d(in_planes, planes, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(planes)
+            )
 
     def forward(self, x):
         identity = x
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
-
-        out = self.conv2(out)
-        out = self.bn2(out)
-
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.dropout(out)
+        out = self.bn2(self.conv2(out))
         if self.downsample is not None:
             identity = self.downsample(x)
-
         out += identity
         out = self.relu(out)
-        out = self.dropout(out)
         return out
 
-class AudioResNet18(nn.Module):
-    """Fast genau wie AudioResNet18, aber mit [1,1,2,2]-Struktur."""
-    def __init__(self, n_classes: int = 50, zero_init_residual: bool = False):
-        super().__init__()
-        norm_layer = nn.BatchNorm2d
-        self.inplanes = 64
+class Resnet18(nn.Module):
+    def __init__(self, num_classes=50, dropout=0.3):
+        super(Resnet18, self).__init__()
+        self.in_planes = 64
 
-        # Stem: 1 Kanal → 64
-        self.conv1   = nn.Conv2d(1, self.inplanes,
-                                 kernel_size=7, stride=2, padding=3, bias=False)
-        self.bn1     = norm_layer(self.inplanes)
-        self.relu    = nn.ReLU(inplace=True)
+        self.conv1 = nn.Conv2d(1, 64, kernel_size=(3, 7), stride=(1, 2), padding=(1, 3), bias=False)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
-        # Jetzt die Blöcke: [1, 1, 2, 2]
-        self.layer1 = self._make_layer(BasicBlock,  64,  blocks=1, stride=1)
-        self.layer2 = self._make_layer(BasicBlock, 128, blocks=1, stride=2)
-        self.layer3 = self._make_layer(BasicBlock, 256, blocks=2, stride=2)
-        self.layer4 = self._make_layer(BasicBlock, 512, blocks=2, stride=2)
+        # ResNet14: [2, 2, 2, 2] blocks per layer
+        self.layer1 = self._make_layer(64, 2, stride=1, se=False, dropout=dropout)
+        self.layer2 = self._make_layer(128, 2, stride=2, se=False, dropout=dropout)
+        self.layer3 = self._make_layer(256, 2, stride=2, se=False, dropout=dropout)
+        self.layer4 = self._make_layer(512, 2, stride=2, se=False, dropout=dropout)
 
-        # Klassifikationskopf
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.dropout  = nn.Dropout(p=0.5)
-        self.fc      = nn.Linear(512 * BasicBlock.expansion, n_classes)
+        self.pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = nn.Sequential(
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Dropout(p=dropout),
+            nn.Linear(256, num_classes)
+        )
 
-        # Gewichtsinitialisierung (wie bei ResNet18)
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight,
-                                        mode='fan_out',
-                                        nonlinearity='relu')
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-
-        # Optional: Zero-Init des letzten BN in jedem BasicBlock
-        if zero_init_residual:
-            for m in self.modules():
-                if isinstance(m, BasicBlock):
-                    nn.init.constant_(m.bn2.weight, 0)
-
-    def _make_layer(self, block, planes, blocks, stride=1):
-        norm_layer = nn.BatchNorm2d
-        downsample = None
-
-        # Wenn sich stride oder Kanalzahl ändert, brauchen wir Shortcut-Downsample:
-        if stride != 1 or self.inplanes != planes * block.expansion:
-            downsample = nn.Sequential(
-                conv1x1(self.inplanes, planes * block.expansion, stride),
-                norm_layer(planes * block.expansion),
-            )
-
+    def _make_layer(self, planes, blocks, stride, se, dropout):
         layers = []
-        # Erster Block (kann stride ≠ 1 haben)
-        layers.append(block(self.inplanes, planes, stride, downsample))
-        self.inplanes = planes * block.expansion
-        # Restliche Blöcke (immer stride=1):
+        layers.append(BasicBlock(self.in_planes, planes, stride, se=False, dropout=dropout))
+        self.in_planes = planes
         for _ in range(1, blocks):
-            layers.append(block(self.inplanes, planes))
-
+            layers.append(BasicBlock(self.in_planes, planes, se=False, dropout=dropout))
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        # x: [B, 1, n_mels, time_steps]
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
+        x = self.relu(self.bn1(self.conv1(x)))
         x = self.maxpool(x)
-
-        x = self.layer1(x)   # 1 Block
-        x = self.layer2(x)   # 1 Block
-        x = self.layer3(x)   # 2 Blöcke
-        x = self.layer4(x)   # 2 Blöcke
-
-        x = self.avgpool(x)          # → [B, 512, 1, 1]
-        x = torch.flatten(x, 1)      # → [B, 512]
-        x = self.dropout(x)          # → [B, 512]
-        x = self.fc(x)               # → [B, n_classes]
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        x = self.pool(x)
+        x = torch.flatten(x, 1)
+        x = self.fc(x)
         return x
