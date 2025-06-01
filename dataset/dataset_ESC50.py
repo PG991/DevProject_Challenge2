@@ -168,9 +168,20 @@ class ESC50(data.Dataset):
 
         # 4) Padding/Cropping (CPU-NumPy ↔ CPU-Tensor):
         wave_np = wave.squeeze(0).numpy()          # [Time] auf CPU-NumPy
-        wave_np = self.wave_transforms(wave_np)     # CPU-NumPy-Transform
-        wave_np = wave_np[np.newaxis, :]            # [1, Time] in NumPy
-        wave = torch.from_numpy(wave_np).float()    # zurück zu CPU-Tensor [1,Time]
+        wave_np = self.wave_transforms(wave_np)     # Ergebnis kann Tensor **oder** NumPy-Array sein
+
+        # ↓ Höhepunkt der Änderung: Unterscheide, ob wave_np Tensor oder NumPy-Array ist
+        if isinstance(wave_np, torch.Tensor):
+            # Jetzt ist wave_np schon ein Tensor – stelle sicher, dass er Shape [1, Time] hat
+            if wave_np.dim() == 1:
+                wave = wave_np.unsqueeze(0).float()   # aus [Time] → [1, Time]
+            else:
+                # Er ist vermutlich schon [1, Time]
+                wave = wave_np.float()
+        else:
+            # wave_np ist ein NumPy-Array: addiere Channel-Dimension und wrapp in Tensor
+            wave_np = wave_np[np.newaxis, :]        # [1, Time] in NumPy
+            wave = torch.from_numpy(wave_np).float()# zurück zu CPU-Tensor [1,Time]
 
         # 5) Mel-Spectrogram + Log-Scaling (CPU):
         mel_spec = self.mel_transform(wave)         # [1, n_mels, T], CPU
