@@ -151,39 +151,36 @@ class ESC50(data.Dataset):
         file_name = self.file_names[index]
         path = os.path.join(self.root, file_name)
 
-        # 1) Waveform mit torchaudio laden (liefert Tensor [1, Time]) und auf GPU schieben
-        wave, rate = torchaudio.load(path)                  # wave: FloatTensor [1, Time] auf CPU
+        # 1) Waveform mit torchaudio auf CPU laden:
+        wave, rate = torchaudio.load(path)  # wave: FloatTensor [1, Time], auf CPU
         if rate != config.sr:
             wave = torchaudio.functional.resample(wave, rate, config.sr)
-        wave = wave.to(device)                              # jetzt [1, Time] auf GPU
 
-        # 2) Label extrahieren
+        # 2) Label ermitteln
         temp = file_name.split('.')[0]
         class_id = int(temp.split('-')[-1])
 
-        # 3) Normalisierung auf [-1, 1] und Skalierung
-        #    (noch auf GPU, deshalb direkt mit Torch-Operationen)
+        # 3) Normierung auf [-1,1] + Skalierung (CPU):
         max_val = wave.abs().max()
         if max_val > 1.0:
             wave = wave / max_val
-        wave = wave * 32768.0                                # [1, Time] auf GPU
+        wave = wave * 32768.0  # CPU-Tensor
 
-        # 4) Padding/Cropping (Wave-Pad und RandomCrop sollten NumPy-Transformen sein,
-        #    wir konvertieren kurz auf CPU und zurück auf GPU)
-        wave_np = wave.squeeze(0).cpu().numpy()             # [Time] auf CPU
-        wave_np = self.wave_transforms(wave_np)             # WavePadding/RandomCrop auf CPU
-        wave_np = wave_np[np.newaxis, :]                    # wieder [1, Time] in NumPy
-        wave = torch.from_numpy(wave_np).float().to(device)  # [1, Time] zurück auf GPU
+        # 4) Padding/Cropping (CPU-NumPy ↔ CPU-Tensor):
+        wave_np = wave.squeeze(0).numpy()          # [Time] auf CPU-NumPy
+        wave_np = self.wave_transforms(wave_np)     # CPU-NumPy-Transform
+        wave_np = wave_np[np.newaxis, :]            # [1, Time] in NumPy
+        wave = torch.from_numpy(wave_np).float()    # zurück zu CPU-Tensor [1,Time]
 
-        # 5) Mel-Spektrogramm & Log-Scaling (vollständig auf GPU)
-        mel_spec = self.mel_transform(wave)                  # [1, n_mels, T] auf GPU
-        log_mel = self.db_transform(mel_spec)                # [1, n_mels, T] auf GPU
+        # 5) Mel-Spectrogram + Log-Scaling (CPU):
+        mel_spec = self.mel_transform(wave)         # [1, n_mels, T], CPU
+        log_mel  = self.db_transform(mel_spec)      # CPU
 
-        # 6) SpecAugment (oder Identity, je nachdem, ob train/test)
-        spec_aug = self.spec_transforms(log_mel)             # [1, n_mels, T] auf GPU
+        # 6) SpecAugment oder Identity (CPU):
+        spec_aug = self.spec_transforms(log_mel)    # CPU
 
-        # 7) Globale Z-Normalisierung (auf GPU)
-        feat = (spec_aug - self.global_mean) / self.global_std  # [1, n_mels, T] auf GPU
+        # 7) Globale Z-Normalisierung (CPU):
+        feat = (spec_aug - self.global_mean) / self.global_std  # CPU
 
         return file_name, feat, class_id
 
