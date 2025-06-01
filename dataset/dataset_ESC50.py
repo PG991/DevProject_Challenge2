@@ -20,6 +20,9 @@ use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
 
 
+
+
+
 def download_file(url: str, fname: str, chunk_size=1024):
     resp = requests.get(url, stream=True)
     total = int(resp.headers.get('content-length', 0))
@@ -141,8 +144,8 @@ class ESC50(data.Dataset):
         file_name = self.file_names[index]
         path = os.path.join(self.root, file_name)
 
-        # 1) Waveform mit torchaudio auf CPU laden:
-        wave, rate = torchaudio.load(path)  # → Tensor shape [1, Time]
+        # 1) Wave laden
+        wave, rate = torchaudio.load(path)    # → [1, Time]
         if rate != config.sr:
             wave = torchaudio.functional.resample(wave, rate, config.sr)
 
@@ -150,38 +153,34 @@ class ESC50(data.Dataset):
         temp = file_name.split('.')[0]
         class_id = int(temp.split('-')[-1])
 
-        # 3) Normierung auf [-1,1] + Skalierung (CPU):
+        # 3) Normalisierung
         max_val = wave.abs().max()
         if max_val > 1.0:
             wave = wave / max_val
-        wave = wave * 32768.0  # CPU-Tensor
+        wave = wave * 32768.0
 
-        # 4) Padding/Cropping (CPU-NumPy ↔ CPU-Tensor):
-        wave_np = wave.squeeze(0).numpy()                # [Time] als np.ndarray
-        wave_np = self.wave_transforms(wave_np)           # Ergebnis: np.ndarray oder Tensor
+        # 4) Padding/Cropping
+        wave_np = wave.squeeze(0).numpy()            # → np.ndarray [Time]
+        wave_np = self.wave_transforms(wave_np)       # → np.ndarray oder Tensor
 
-        # Unterscheide jetzt direkt, ob wave_np schon Tensor ist oder noch NumPy:
         if isinstance(wave_np, torch.Tensor):
-            # Wenn wave_np 1D ist, wird es zu [1, Time]. Falls schon [1, Time], bleibt es so.
             if wave_np.dim() == 1:
-                wave_tensor = wave_np.unsqueeze(0).float()  # aus [Time] → [1, Time]
+                wave_tensor = wave_np.unsqueeze(0).float()  # → [1, Time]
             else:
-                # z.B. schon [1, Time]
-                wave_tensor = wave_np.float()
+                wave_tensor = wave_np.float()               # evtl. schon [1, Time]
         else:
-            # wave_np ist noch np.ndarray: bauen wir einen Kanal davor und wandeln in Tensor um
-            wave_np = wave_np[np.newaxis, :]               # [1, Time] als NumPy
-            wave_tensor = torch.from_numpy(wave_np).float() # zurück zu CPU-Tensor [1,Time]
+            wave_np = wave_np[np.newaxis, :]                # → [1, Time]
+            wave_tensor = torch.from_numpy(wave_np).float()
 
-        # 5) Mel-Spectrogram + Log-Scaling (CPU)
-        mel_spec = self.mel_transform(wave_tensor)          # → [1, n_mels, T]
-        log_mel  = self.db_transform(mel_spec)              # → [1, n_mels, T]
+        # 5) Mel + Log
+        mel_spec = self.mel_transform(wave_tensor)      # → [1, 64, T]
+        log_mel  = self.db_transform(mel_spec)          # → [1, 64, T]
 
-        # 6) SpecAugment oder Identity (CPU) – jetzt nur noch EINE Kanal-Dim
-        spec_aug = self.spec_transforms(log_mel)            # → [1, n_mels, T]
+        # 6) SpecAugment (bzw. Identität): exakt [1, 64, T]
+        spec_aug = self.spec_transforms(log_mel)        # → [1, 64, T]
 
-        # 7) Globale Z-Normalisierung (CPU)
-        feat = (spec_aug - self.global_mean) / self.global_std  # → [1, n_mels, T]
+        # 7) Stoffe Z-Norm
+        feat = (spec_aug - self.global_mean) / self.global_std  # → [1, 64, T]
 
         return file_name, feat, class_id
 

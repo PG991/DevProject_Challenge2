@@ -227,14 +227,15 @@ if __name__ == "__main__":
             # Define a loss function and optimizer
             criterion = nn.CrossEntropyLoss().to(device)
 
-            optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
+            optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
             scheduler = torch.optim.lr_scheduler.OneCycleLR(
                 optimizer,
-                max_lr=1e-3,
+                max_lr=config.lr,
                 total_steps=config.epochs * len(train_loader),
                 pct_start=0.1,
                 anneal_strategy='cos',
             )
+
 
             # fit the model using only training and validation data, no testing data allowed here
             print()
