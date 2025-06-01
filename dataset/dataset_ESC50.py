@@ -103,14 +103,7 @@ class ESC50(data.Dataset):
                 transforms.RandomCrop(out_len=out_len)
             )
 
-            self.spec_transforms = transforms.Compose(
-                # to Tensor and prepend singleton dim
-                #lambda x: torch.Tensor(x).unsqueeze(0),
-                # lambda non-pickleable, problem on windows, replace with partial function
-                torch.Tensor,
-                partial(torch.unsqueeze, dim=0),
-                SpecAugment(time_mask_param=30, freq_mask_param=13),
-            )
+            self.spec_transforms = SpecAugment(time_mask_param=30, freq_mask_param=13)
 
         else:
             # for testing transforms are applied deterministically to support reproducible scores
@@ -121,10 +114,7 @@ class ESC50(data.Dataset):
                 transforms.RandomCrop(out_len=out_len, train=False)
             )
 
-            self.spec_transforms = transforms.Compose(
-                torch.Tensor,
-                partial(torch.unsqueeze, dim=0),
-            )
+            self.spec_transforms = lambda x: x
         # ------------------------------------------------------------------------------------------------
         # MelSpectrogram + Log‐Scaler via torchaudio (laufen auf GPU)
         # wähle n_fft, hop_length, n_mels wie bisher in config
@@ -152,7 +142,7 @@ class ESC50(data.Dataset):
         path = os.path.join(self.root, file_name)
 
         # 1) Waveform mit torchaudio auf CPU laden:
-        wave, rate = torchaudio.load(path)  # wave: FloatTensor [1, Time], auf CPU
+        wave, rate = torchaudio.load(path)  # → Tensor shape [1, Time]
         if rate != config.sr:
             wave = torchaudio.functional.resample(wave, rate, config.sr)
 
@@ -167,33 +157,34 @@ class ESC50(data.Dataset):
         wave = wave * 32768.0  # CPU-Tensor
 
         # 4) Padding/Cropping (CPU-NumPy ↔ CPU-Tensor):
-        wave_np = wave.squeeze(0).numpy()          # [Time] auf CPU-NumPy
-        wave_np = self.wave_transforms(wave_np)     # Ergebnis kann Tensor **oder** NumPy-Array sein
+        wave_np = wave.squeeze(0).numpy()                # [Time] als np.ndarray
+        wave_np = self.wave_transforms(wave_np)           # Ergebnis: np.ndarray oder Tensor
 
-        # ↓ Höhepunkt der Änderung: Unterscheide, ob wave_np Tensor oder NumPy-Array ist
+        # Unterscheide jetzt direkt, ob wave_np schon Tensor ist oder noch NumPy:
         if isinstance(wave_np, torch.Tensor):
-            # Jetzt ist wave_np schon ein Tensor – stelle sicher, dass er Shape [1, Time] hat
+            # Wenn wave_np 1D ist, wird es zu [1, Time]. Falls schon [1, Time], bleibt es so.
             if wave_np.dim() == 1:
-                wave = wave_np.unsqueeze(0).float()   # aus [Time] → [1, Time]
+                wave_tensor = wave_np.unsqueeze(0).float()  # aus [Time] → [1, Time]
             else:
-                # Er ist vermutlich schon [1, Time]
-                wave = wave_np.float()
+                # z.B. schon [1, Time]
+                wave_tensor = wave_np.float()
         else:
-            # wave_np ist ein NumPy-Array: addiere Channel-Dimension und wrapp in Tensor
-            wave_np = wave_np[np.newaxis, :]        # [1, Time] in NumPy
-            wave = torch.from_numpy(wave_np).float()# zurück zu CPU-Tensor [1,Time]
+            # wave_np ist noch np.ndarray: bauen wir einen Kanal davor und wandeln in Tensor um
+            wave_np = wave_np[np.newaxis, :]               # [1, Time] als NumPy
+            wave_tensor = torch.from_numpy(wave_np).float() # zurück zu CPU-Tensor [1,Time]
 
-        # 5) Mel-Spectrogram + Log-Scaling (CPU):
-        mel_spec = self.mel_transform(wave)         # [1, n_mels, T], CPU
-        log_mel  = self.db_transform(mel_spec)      # CPU
+        # 5) Mel-Spectrogram + Log-Scaling (CPU)
+        mel_spec = self.mel_transform(wave_tensor)          # → [1, n_mels, T]
+        log_mel  = self.db_transform(mel_spec)              # → [1, n_mels, T]
 
-        # 6) SpecAugment oder Identity (CPU):
-        spec_aug = self.spec_transforms(log_mel)    # CPU
+        # 6) SpecAugment oder Identity (CPU) – jetzt nur noch EINE Kanal-Dim
+        spec_aug = self.spec_transforms(log_mel)            # → [1, n_mels, T]
 
-        # 7) Globale Z-Normalisierung (CPU):
-        feat = (spec_aug - self.global_mean) / self.global_std  # CPU
+        # 7) Globale Z-Normalisierung (CPU)
+        feat = (spec_aug - self.global_mean) / self.global_std  # → [1, n_mels, T]
 
         return file_name, feat, class_id
+
 
 
 
