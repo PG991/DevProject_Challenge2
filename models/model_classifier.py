@@ -8,9 +8,11 @@ def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
     )
 
 def conv1x1(in_planes, out_planes, stride=1):
-    return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
+    return nn.Conv2d(in_planes, out_planes, kernel_size=1,
+                     stride=stride, bias=False)
 
 class BasicBlock(nn.Module):
+    """Gleich wie in deinem AudioResNet18."""
     expansion = 1
 
     def __init__(self, in_planes, planes, stride=1, downsample=None):
@@ -25,7 +27,6 @@ class BasicBlock(nn.Module):
 
     def forward(self, x):
         identity = x
-
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
@@ -38,24 +39,26 @@ class BasicBlock(nn.Module):
 
         out += identity
         out = self.relu(out)
-        out = self.dropout(out)   # NEU: Dropout am Block-Ende
+        out = self.dropout(out)
         return out
 
 class AudioResNet18(nn.Module):
+    """Fast genau wie AudioResNet18, aber mit [1,1,2,2]-Struktur."""
     def __init__(self, n_classes: int = 50, zero_init_residual: bool = False):
         super().__init__()
         norm_layer = nn.BatchNorm2d
         self.inplanes = 64
 
-        # Stem: 1-Kanal → 64 Kanäle
-        self.conv1   = nn.Conv2d(1, self.inplanes, kernel_size=7, stride=2, padding=3, bias=False)
+        # Stem: 1 Kanal → 64
+        self.conv1   = nn.Conv2d(1, self.inplanes,
+                                 kernel_size=7, stride=2, padding=3, bias=False)
         self.bn1     = norm_layer(self.inplanes)
         self.relu    = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
-        # ResNet-Blöcke: jeweils 2 BasicBlocks
-        self.layer1 = self._make_layer(BasicBlock,  64, blocks=2, stride=1)
-        self.layer2 = self._make_layer(BasicBlock, 128, blocks=2, stride=2)
+        # Jetzt die Blöcke: [1, 1, 2, 2]
+        self.layer1 = self._make_layer(BasicBlock,  64,  blocks=1, stride=1)
+        self.layer2 = self._make_layer(BasicBlock, 128, blocks=1, stride=2)
         self.layer3 = self._make_layer(BasicBlock, 256, blocks=2, stride=2)
         self.layer4 = self._make_layer(BasicBlock, 512, blocks=2, stride=2)
 
@@ -64,15 +67,17 @@ class AudioResNet18(nn.Module):
         self.dropout  = nn.Dropout(p=0.5)
         self.fc      = nn.Linear(512 * BasicBlock.expansion, n_classes)
 
-        # Gewichtsinitialisierung
+        # Gewichtsinitialisierung (wie bei ResNet18)
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight,
+                                        mode='fan_out',
+                                        nonlinearity='relu')
             elif isinstance(m, nn.BatchNorm2d):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
 
-        # optional: Zero-Init des letzten BatchNorm in jedem BasicBlock
+        # Optional: Zero-Init des letzten BN in jedem BasicBlock
         if zero_init_residual:
             for m in self.modules():
                 if isinstance(m, BasicBlock):
@@ -82,7 +87,7 @@ class AudioResNet18(nn.Module):
         norm_layer = nn.BatchNorm2d
         downsample = None
 
-        # Shortcut anpassen, falls sich Spatial-Size oder Kanalzahl ändert
+        # Wenn sich stride oder Kanalzahl ändert, brauchen wir Shortcut-Downsample:
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
                 conv1x1(self.inplanes, planes * block.expansion, stride),
@@ -90,8 +95,10 @@ class AudioResNet18(nn.Module):
             )
 
         layers = []
+        # Erster Block (kann stride ≠ 1 haben)
         layers.append(block(self.inplanes, planes, stride, downsample))
         self.inplanes = planes * block.expansion
+        # Restliche Blöcke (immer stride=1):
         for _ in range(1, blocks):
             layers.append(block(self.inplanes, planes))
 
@@ -104,13 +111,13 @@ class AudioResNet18(nn.Module):
         x = self.relu(x)
         x = self.maxpool(x)
 
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
+        x = self.layer1(x)   # 1 Block
+        x = self.layer2(x)   # 1 Block
+        x = self.layer3(x)   # 2 Blöcke
+        x = self.layer4(x)   # 2 Blöcke
 
-        x = self.avgpool(x)          # [B, 512, 1, 1]
-        x = torch.flatten(x, 1)      # [B, 512]
-        x = self.dropout(x)          # [B, 512]
-        x = self.fc(x)               # [B, 50]
+        x = self.avgpool(x)          # → [B, 512, 1, 1]
+        x = torch.flatten(x, 1)      # → [B, 512]
+        x = self.dropout(x)          # → [B, 512]
+        x = self.fc(x)               # → [B, n_classes]
         return x
