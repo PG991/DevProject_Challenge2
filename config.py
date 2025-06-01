@@ -16,8 +16,8 @@ test_folds = [1, 2, 3, 4, 5]
 
 # sampling rate for waves
 sr = 44100
-n_mels = 64
-hop_length = 256
+n_mels = 164
+hop_length = 512
 #n_mfcc = 42
 
 model_constructor = "AudioResNet18(n_classes=config.n_classes)"
@@ -36,7 +36,7 @@ num_workers = 4
 # for local Windows or Linux machine
 persistent_workers = True
 #persistent_workers = False
-epochs = 100
+epochs = 150
 #epochs = 1
 # early stopping after epochs with no improvement
 patience = 15
