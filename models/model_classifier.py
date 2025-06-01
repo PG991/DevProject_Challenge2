@@ -76,7 +76,6 @@ class SEBasicBlock(nn.Module):
         return out
 
 class AudioResNet18(nn.Module):
-    """ResNet-18 variant with SE blocks for 1-channel spectrogram input"""
     def __init__(self, n_classes: int = 50, zero_init_residual: bool = False):
         super().__init__()
         norm_layer = nn.BatchNorm2d
@@ -88,18 +87,19 @@ class AudioResNet18(nn.Module):
         self.relu    = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
-        # Residual layers with SEBasicBlock
-        self.layer1 = self._make_layer(SEBasicBlock,  64, blocks=2, stride=1)
-        self.layer2 = self._make_layer(SEBasicBlock, 128, blocks=2, stride=2)
-        self.layer3 = self._make_layer(SEBasicBlock, 256, blocks=2, stride=2)
-        self.layer4 = self._make_layer(SEBasicBlock, 512, blocks=2, stride=2)
+        # SE-ResNet-Blöcke (2 + 2 + 2 = 6 Residual-Convs + 1 Stem-Conv = 7,
+        # dazu je 1 Pooling und 1 FC = ~14 Schichten insgesamt)
+        self.layer1 = self._make_layer(SEBasicBlock,  64, blocks=2, stride=1)   # → 2 Blocks × 2 Convs
+        self.layer2 = self._make_layer(SEBasicBlock, 128, blocks=2, stride=2)   # → 2 Blocks × 2 Convs
+        self.layer3 = self._make_layer(SEBasicBlock, 256, blocks=2, stride=2)   # → 2 Blocks × 2 Convs
+        # layer4 entfällt → keine 512er-Ebene
 
-        # Head
+        # Klassifikationskopf (nach layer3 sind es 256 Kanäle)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.dropout = nn.Dropout(p=0.5)
-        self.fc      = nn.Linear(512 * SEBasicBlock.expansion, n_classes)
+        self.dropout = nn.Dropout(p=0.4)
+        self.fc      = nn.Linear(256 * SEBasicBlock.expansion, n_classes)
 
-        # Initialization
+        # Initialisierung
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
@@ -107,7 +107,6 @@ class AudioResNet18(nn.Module):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
 
-        # Zero-initialize last BN in each residual branch, if desired
         if zero_init_residual:
             for m in self.modules():
                 if isinstance(m, SEBasicBlock):
@@ -127,11 +126,9 @@ class AudioResNet18(nn.Module):
         self.inplanes = planes * block.expansion
         for _ in range(1, blocks):
             layers.append(block(self.inplanes, planes))
-
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        # x: [B, 1, n_mels, time_steps]
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
@@ -140,14 +137,13 @@ class AudioResNet18(nn.Module):
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
-        x = self.layer4(x)
+        # kein layer4
 
-        x = self.avgpool(x)         # [B, 512, 1, 1]
-        x = torch.flatten(x, 1)     # [B, 512]
-        x = self.dropout(x)         # [B, 512]
+        x = self.avgpool(x)         # [B, 256, 1, 1]
+        x = torch.flatten(x, 1)     # [B, 256]
+        x = self.dropout(x)         # [B, 256]
         x = self.fc(x)              # [B, 50]
         return x
 
-def resnet18(n_classes=50, **kwargs):
-    """Factory function for SE-ResNet18"""
+def resnet14_se(n_classes=50, **kwargs):
     return AudioResNet18(n_classes=n_classes, **kwargs)

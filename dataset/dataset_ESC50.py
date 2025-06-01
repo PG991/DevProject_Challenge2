@@ -12,7 +12,8 @@ import librosa
 import config
 from . import transforms
 from .SpecAugment import SpecAugment
-
+import torchaudio.transforms as T_audio
+import torchaudio
 
 # CUDA for PyTorch
 use_cuda = torch.cuda.is_available()
@@ -91,6 +92,7 @@ class ESC50(data.Dataset):
         # the number of samples in the wave (=length) required for spectrogram
         out_len = int(((config.sr * 5) // config.hop_length) * config.hop_length)
         train = self.subset == "train"
+
         if train:
             # augment training data with transformations that include randomness
             # transforms can be applied on wave and spectral representation
@@ -123,6 +125,21 @@ class ESC50(data.Dataset):
                 torch.Tensor,
                 partial(torch.unsqueeze, dim=0),
             )
+        # ------------------------------------------------------------------------------------------------
+        # MelSpectrogram + Log‐Scaler via torchaudio (laufen auf GPU)
+        # wähle n_fft, hop_length, n_mels wie bisher in config
+        self.mel_transform = T_audio.MelSpectrogram(
+            sample_rate=config.sr,
+            n_fft=1024,
+            hop_length=config.hop_length,
+            n_mels=config.n_mels,
+            power=2.0,
+
+        )
+        # Konvertiert Amplituden→dB
+        self.db_transform = T_audio.AmplitudeToDB()
+        # ------------------------------------------------------------------------------------------------
+
         self.global_mean = global_mean_std[0]
         self.global_std = global_mean_std[1]
         self.n_mfcc = config.n_mfcc if hasattr(config, "n_mfcc") else None
@@ -133,68 +150,43 @@ class ESC50(data.Dataset):
     def __getitem__(self, index):
         file_name = self.file_names[index]
         path = os.path.join(self.root, file_name)
-        wave, rate = librosa.load(path, sr=config.sr)
 
-        if self.subset == "train":
-            # 1) Gaussian Noise
-            noise_amp = np.random.uniform(0.01, 0.15) * np.random.randn(len(wave))
-            wave = wave + noise_amp
-            # 2) Time Stretch (Tempo variieren)
-            stretch = np.random.uniform(0.8, 1.25)
-            wave = librosa.effects.time_stretch(wave, rate=stretch)
-            # 3) Pitch Shift (Tonhöhe variieren)
-            n_steps = np.random.uniform(-4, 4)
-            wave = librosa.effects.pitch_shift(wave, sr=rate, n_steps=n_steps)
+        # 1) Waveform mit torchaudio laden (liefert Tensor [1, Time]) und auf GPU schieben
+        wave, rate = torchaudio.load(path)                  # wave: FloatTensor [1, Time] auf CPU
+        if rate != config.sr:
+            wave = torchaudio.functional.resample(wave, rate, config.sr)
+        wave = wave.to(device)                              # jetzt [1, Time] auf GPU
 
-        # identifying the label of the sample from its name
+        # 2) Label extrahieren
         temp = file_name.split('.')[0]
         class_id = int(temp.split('-')[-1])
 
-        if wave.ndim == 1:
-            wave = wave[:, np.newaxis]
+        # 3) Normalisierung auf [-1, 1] und Skalierung
+        #    (noch auf GPU, deshalb direkt mit Torch-Operationen)
+        max_val = wave.abs().max()
+        if max_val > 1.0:
+            wave = wave / max_val
+        wave = wave * 32768.0                                # [1, Time] auf GPU
 
-        # normalizing waves to [-1, 1]
-        if np.abs(wave.max()) > 1.0:
-            wave = transforms.scale(wave, wave.min(), wave.max(), -1.0, 1.0)
-        wave = wave.T * 32768.0
+        # 4) Padding/Cropping (Wave-Pad und RandomCrop sollten NumPy-Transformen sein,
+        #    wir konvertieren kurz auf CPU und zurück auf GPU)
+        wave_np = wave.squeeze(0).cpu().numpy()             # [Time] auf CPU
+        wave_np = self.wave_transforms(wave_np)             # WavePadding/RandomCrop auf CPU
+        wave_np = wave_np[np.newaxis, :]                    # wieder [1, Time] in NumPy
+        wave = torch.from_numpy(wave_np).float().to(device)  # [1, Time] zurück auf GPU
 
-        # Remove silent sections
-        start = wave.nonzero()[1].min()
-        end = wave.nonzero()[1].max()
-        wave = wave[:, start: end + 1]
+        # 5) Mel-Spektrogramm & Log-Scaling (vollständig auf GPU)
+        mel_spec = self.mel_transform(wave)                  # [1, n_mels, T] auf GPU
+        log_mel = self.db_transform(mel_spec)                # [1, n_mels, T] auf GPU
 
-        wave_copy = np.copy(wave)
-        wave_copy = self.wave_transforms(wave_copy)
-        wave_copy.squeeze_(0)
+        # 6) SpecAugment (oder Identity, je nachdem, ob train/test)
+        spec_aug = self.spec_transforms(log_mel)             # [1, n_mels, T] auf GPU
 
-        if self.n_mfcc:
-            mfcc = librosa.feature.mfcc(y=wave_copy.numpy(),
-                                        sr=config.sr,
-                                        n_mels=config.n_mels,
-                                        n_fft=1024,
-                                        hop_length=config.hop_length,
-                                        n_mfcc=self.n_mfcc)
-            feat = mfcc
-        else:
-            s = librosa.feature.melspectrogram(y=wave_copy.numpy(),
-                                               sr=config.sr,
-                                               n_mels=config.n_mels,
-                                               n_fft=1024,
-                                               hop_length=config.hop_length,
-                                               #center=False,
-                                               )
-            log_s = librosa.power_to_db(s, ref=np.max)
-
-            # masking the spectrograms
-            log_s = self.spec_transforms(log_s)
-
-            feat = log_s
-
-        # normalize
-        if self.global_mean:
-            feat = (feat - self.global_mean) / self.global_std
+        # 7) Globale Z-Normalisierung (auf GPU)
+        feat = (spec_aug - self.global_mean) / self.global_std  # [1, n_mels, T] auf GPU
 
         return file_name, feat, class_id
+
 
 
 def get_global_stats(data_path):

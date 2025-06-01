@@ -29,18 +29,19 @@ device_id = 0
 batch_size = 64
 # in Colab to avoid Warning
 
-num_workers = 1
+num_workers = 4
 #num_workers = 4
 #num_workers = 0
 
 # for local Windows or Linux machine
 persistent_workers = True
 #persistent_workers = False
-epochs = 200
+epochs = 100
 #epochs = 1
 # early stopping after epochs with no improvement
-patience = 20
-lr = 1e-3
+patience = 15
+#lr = 1e-3
+lr = 1e-4
 weight_decay = 1e-3
 warm_epochs = 10
 gamma = 0.9

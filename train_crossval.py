@@ -167,6 +167,7 @@ if __name__ == "__main__":
     data_path = config.esc50_path
     use_cuda = torch.cuda.is_available()
     device = torch.device(f"cuda:{config.device_id}" if use_cuda else "cpu")
+    torch.backends.cudnn.benchmark = True
 
     # digits for logging
     float_fmt = ".3f"
@@ -213,6 +214,7 @@ if __name__ == "__main__":
                                                      num_workers=config.num_workers,
                                                      drop_last=False,
                                                      persistent_workers=config.persistent_workers,
+                                                     pin_memory=True,
                                                      )
 
             print()
