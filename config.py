@@ -20,7 +20,7 @@ n_mels = 128
 hop_length = 512
 #n_mfcc = 42
 
-model_constructor = "AudioResNe18(n_classes=config.n_classes)"
+model_constructor = "AudioResNet18(n_classes=config.n_classes)"
 
 # ###TRAINING
 # ratio to split off from training data
