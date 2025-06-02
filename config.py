@@ -26,7 +26,7 @@ model_constructor = "AudioResNet18(n_classes=config.n_classes)"
 # ratio to split off from training data
 val_size = .2  # could be changed
 device_id = 0
-batch_size = 64
+batch_size = 32
 # in Colab to avoid Warning
 
 num_workers = 4
@@ -37,12 +37,12 @@ persistent_workers = True
 epochs = 200
 #epochs = 1
 # early stopping after epochs with no improvement
-patience = 20
-lr = 1e-3
-weight_decay = 1e-3
+patience = 24
+lr = 1e-4
+weight_decay = 1e-4
 warm_epochs = 10
-gamma = 0.9
-step_size = 1
+gamma = 0.8
+step_size = 2
 
 # ### TESTING
 # model checkpoints loaded for testing
