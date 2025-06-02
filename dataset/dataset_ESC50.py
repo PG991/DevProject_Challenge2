@@ -19,7 +19,6 @@ import torch.nn as nn
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
 
-
 def download_file(url: str, fname: str, chunk_size=1024):
     resp = requests.get(url, stream=True)
     total = int(resp.headers.get('content-length', 0))
@@ -54,7 +53,6 @@ def download_progress(current, total, width=80):
 
 
 class ESC50(data.Dataset):
-
     def __init__(self, root, test_folds=frozenset((1,)), subset="train", global_mean_std=(0.0, 1.0), download=False):
         audio = 'ESC-50-master/audio'
         root = os.path.normpath(root)
@@ -103,44 +101,32 @@ class ESC50(data.Dataset):
                 transforms.RandomCrop(out_len=out_len)
             )
 
-            self.mel_transform = T_audio.MelSpectrogram(
-                sample_rate=config.sr,
-                n_fft=1024,
-                hop_length=config.hop_length,
-                n_mels=config.n_mels,
-                power=2.0
-            )
-            self.db_transform = T_audio.AmplitudeToDB()
-
             self.spec_transforms = transforms.Compose(
-                SpecAugment(time_mask_param=30, freq_mask_param=13)
+                # to Tensor and prepend singleton dim
+                #lambda x: torch.Tensor(x).unsqueeze(0),
+                # lambda non-pickleable, problem on windows, replace with partial function
+                torch.Tensor,
+                partial(torch.unsqueeze, dim=0),
+                SpecAugment(time_mask_param=30, freq_mask_param=13),
             )
-            
 
         else:
-            # gleiche Wave-Transforms ohne Zufall
+            # for testing transforms are applied deterministically to support reproducible scores
             self.wave_transforms = transforms.Compose(
                 torch.Tensor,
+                # disable randomness
                 transforms.RandomPadding(out_len=out_len, train=False),
                 transforms.RandomCrop(out_len=out_len, train=False)
             )
-            # auch im Test Mel+Log berechnen, aber ohne Augment
-            self.mel_transform = T_audio.MelSpectrogram(
-                sample_rate=config.sr,
-                n_fft=1024,
-                hop_length=config.hop_length,
-                n_mels=config.n_mels,
-                power=2.0,
+
+            self.spec_transforms = transforms.Compose(
+                torch.Tensor,
+                partial(torch.unsqueeze, dim=0),
             )
-            self.db_transform = T_audio.AmplitudeToDB()
-
-            # im Val/Test keine SpecAugment
-            self.spec_transforms = nn.Identity()
-
-
         self.global_mean = global_mean_std[0]
         self.global_std = global_mean_std[1]
-        # self.n_mfcc = config.n_mfcc if hasattr(config, "n_mfcc") else None
+        self.n_mfcc = config.n_mfcc if hasattr(config, "n_mfcc") else None
+
 
     def __len__(self):
         return len(self.file_names)

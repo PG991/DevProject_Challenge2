@@ -22,7 +22,7 @@ if torch.cuda.is_available():
     print("GPU-Name:", torch.cuda.get_device_name(0))
 
 
-def mixup_data(x, y, alpha=0.2):
+def mixup_data(x, y, alpha=0.15):
     """Returns mixed inputs, pairs of targets, and lambda"""
     if alpha > 0:
         lam = np.random.beta(alpha, alpha)
@@ -89,7 +89,7 @@ def train_epoch():
         y_true = label.to(device)
 
         # Mixup anwenden
-        x_mix, y_a, y_b, lam = mixup_data(x, y_true, alpha=0.2)
+        x_mix, y_a, y_b, lam = mixup_data(x, y_true, alpha=0.15)
 
         # Forward + gemischter Loss
         y_prob = model(x_mix)

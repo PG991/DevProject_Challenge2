@@ -20,7 +20,7 @@ class BasicBlock(nn.Module):
         self.relu  = nn.ReLU(inplace=True)
         self.conv2 = conv3x3(planes, planes)
         self.bn2   = nn.BatchNorm2d(planes)
-        self.dropout = nn.Dropout(p=0.30)
+        self.dropout = nn.Dropout(p=0.25)
         self.downsample = downsample
 
     def forward(self, x):
@@ -41,7 +41,7 @@ class BasicBlock(nn.Module):
         out = self.dropout(out)   # NEU: Dropout am Block-Ende
         return out
 
-class AudioResNet34(nn.Module):
+class AudioResNet18(nn.Module):
     def __init__(self, n_classes: int = 50, zero_init_residual: bool = False):
         super().__init__()
         norm_layer = nn.BatchNorm2d
@@ -54,14 +54,14 @@ class AudioResNet34(nn.Module):
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
         # ResNet-Blöcke: jeweils 2 BasicBlocks
-        self.layer1 = self._make_layer(BasicBlock,  64, blocks=3, stride=1)
-        self.layer2 = self._make_layer(BasicBlock, 128, blocks=4, stride=2)
-        self.layer3 = self._make_layer(BasicBlock, 256, blocks=6, stride=2)
-        self.layer4 = self._make_layer(BasicBlock, 512, blocks=3, stride=2)
+        self.layer1 = self._make_layer(BasicBlock,  64, blocks=2, stride=1)
+        self.layer2 = self._make_layer(BasicBlock, 128, blocks=2, stride=2)
+        self.layer3 = self._make_layer(BasicBlock, 256, blocks=2, stride=2)
+        self.layer4 = self._make_layer(BasicBlock, 512, blocks=2, stride=2)
 
         # Klassifikationskopf
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.dropout  = nn.Dropout(p=0.4)
+        self.dropout  = nn.Dropout(p=0.5)
         self.fc      = nn.Linear(512 * BasicBlock.expansion, n_classes)
 
         # Gewichtsinitialisierung
