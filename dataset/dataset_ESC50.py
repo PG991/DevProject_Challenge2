@@ -136,7 +136,7 @@ class ESC50(data.Dataset):
         path = os.path.join(self.root, file_name)
         wave, rate = librosa.load(path, sr=config.sr)
 
-        # identifying the label of the sample from its name
+        # identifying the label of the sample from its nameMore actions
         temp = file_name.split('.')[0]
         class_id = int(temp.split('-')[-1])
 
@@ -157,34 +157,34 @@ class ESC50(data.Dataset):
         wave_copy = self.wave_transforms(wave_copy)
         wave_copy.squeeze_(0)
 
-        if isinstance(wave_copy, np.ndarray):
-            wave_tensor = torch.from_numpy(wave_copy).float()
+        if self.n_mfcc:
+            mfcc = librosa.feature.mfcc(y=wave_copy.numpy(),
+                                        sr=config.sr,
+                                        n_mels=config.n_mels,
+                                        n_fft=1024,
+                                        hop_length=config.hop_length,
+                                        n_mfcc=self.n_mfcc)
+            feat = mfcc
         else:
-            wave_tensor = wave_copy  # falls schon Tensor
+            s = librosa.feature.melspectrogram(y=wave_copy.numpy(),
+                                               sr=config.sr,
+                                               n_mels=config.n_mels,
+                                               n_fft=1024,
+                                               hop_length=config.hop_length,
+                                               #center=False,
+                                               )
+            log_s = librosa.power_to_db(s, ref=np.max)
 
-        # 2) Channel-Dim hinzufügen: [Time] → [1, Time]
-        if wave_tensor.dim() == 1:
-            wave_tensor = wave_tensor.unsqueeze(0)
+            # masking the spectrograms
+            log_s = self.spec_transforms(log_s)
 
-        # 3) Mel-Spektrogramm & Log-Scaling
-        mel_spec = self.mel_transform(wave_tensor)  # → [1, n_mels, T]
-        log_mel  = self.db_transform(mel_spec)      # → [1, n_mels, T]
+            feat = log_s
 
-        # 4) SpecAugment (oder Identity im Val/Test)
-        spec_aug = self.spec_transforms(log_mel)    # → [1, n_mels, T]
-
-        # 5) Globale Normalisierung
-        feat = (spec_aug - self.global_mean) / self.global_std
+        # normalize
+        if self.global_mean:
+            feat = (feat - self.global_mean) / self.global_std
 
         return file_name, feat, class_id
-
-
-        # # normalize
-        # if self.global_mean:
-        #     feat = (feat - self.global_mean) / self.global_std
-
-        # return file_name, feat, class_id
-
 
 def get_global_stats(data_path):
     res = []
