@@ -57,6 +57,11 @@ class ESC50(data.Dataset):
         audio = 'ESC-50-master/audio'
         root = os.path.normpath(root)
         audio = os.path.join(root, audio)
+
+        self.mel_dict = {}
+        self.wave_file_dict = {}
+
+
         if subset in {"train", "test", "val"}:
             self.subset = subset
         else:
@@ -135,57 +140,64 @@ class ESC50(data.Dataset):
     def __getitem__(self, index):
         file_name = self.file_names[index]
         path = os.path.join(self.root, file_name)
-        wave, rate = librosa.load(path, sr=config.sr)
-
-        # identifying the label of the sample from its nameMore actions
         temp = file_name.split('.')[0]
         class_id = int(temp.split('-')[-1])
 
-        if wave.ndim == 1:
-            wave = wave[:, np.newaxis]
+        # --- Caching für Original-Wave ---
+        if path not in self.wave_file_dict:
+            wave, rate = librosa.load(path, sr=config.sr)
+            if wave.ndim == 1:
+                wave = wave[:, np.newaxis]
+            if np.abs(wave.max()) > 1.0:
+                wave = transforms.scale(wave, wave.min(), wave.max(), -1.0, 1.0)
+            wave = wave.T * 32768.0
+            start = wave.nonzero()[1].min()
+            end = wave.nonzero()[1].max()
+            wave = wave[:, start: end + 1]
+            self.wave_file_dict[path] = wave
 
-        # normalizing waves to [-1, 1]
-        if np.abs(wave.max()) > 1.0:
-            wave = transforms.scale(wave, wave.min(), wave.max(), -1.0, 1.0)
-        wave = wave.T * 32768.0
-
-        # Remove silent sections
-        start = wave.nonzero()[1].min()
-        end = wave.nonzero()[1].max()
-        wave = wave[:, start: end + 1]
-
+        # --- Augmentation IMMER erst HIER, NACH dem Caching ---
+        wave = self.wave_file_dict[path]
         wave_copy = np.copy(wave)
         wave_copy = self.wave_transforms(wave_copy)
         wave_copy.squeeze_(0)
 
+        # Caching für Mel/MFCC OHNE Augmentierung
+        # (Dennoch: Mel-Spektrogramm wird aus der augmentierten Welle gebildet.)
         if self.n_mfcc:
-            mfcc = librosa.feature.mfcc(y=wave_copy.numpy(),
-                                        sr=config.sr,
-                                        n_mels=config.n_mels,
-                                        n_fft=1024,
-                                        hop_length=config.hop_length,
-                                        n_mfcc=self.n_mfcc)
-            feat = mfcc
+            mel_cache_key = (path, 'mfcc')
+            if mel_cache_key not in self.mel_dict:
+                mfcc = librosa.feature.mfcc(
+                    y=wave_copy.numpy(),
+                    sr=config.sr,
+                    n_mels=config.n_mels,
+                    n_fft=1024,
+                    hop_length=config.hop_length,
+                    n_mfcc=self.n_mfcc
+                )
+                self.mel_dict[mel_cache_key] = mfcc
+            feat = self.mel_dict[mel_cache_key]
         else:
-            s = librosa.feature.melspectrogram(y=wave_copy.numpy(),
-                                               sr=config.sr,
-                                               n_mels=config.n_mels,
-                                               n_fft=1024,
-                                               hop_length=config.hop_length,
-                                               #center=False,
-                                               )
-            log_s = librosa.power_to_db(s, ref=np.max)
+            mel_cache_key = (path, 'mel')
+            if mel_cache_key not in self.mel_dict:
+                s = librosa.feature.melspectrogram(
+                    y=wave_copy.numpy(),
+                    sr=config.sr,
+                    n_mels=config.n_mels,
+                    n_fft=1024,
+                    hop_length=config.hop_length,
+                )
+                log_s = librosa.power_to_db(s, ref=np.max)
+                self.mel_dict[mel_cache_key] = log_s
+            log_s = self.mel_dict[mel_cache_key]
+            feat = self.spec_transforms(log_s)
 
-            # masking the spectrograms
-            log_s = self.spec_transforms(log_s)
-
-            feat = log_s
-
-        # normalize
         if self.global_mean:
             feat = (feat - self.global_mean) / self.global_std
 
         return file_name, feat, class_id
+
+
 
 def get_global_stats(data_path):
     res = []
