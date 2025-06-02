@@ -225,19 +225,19 @@ if __name__ == "__main__":
             # Define a loss function and optimizer
             criterion = nn.CrossEntropyLoss().to(device)
 
-            optimizer = torch.optim.RAdam(model.parameters(),
+            optimizer = torch.optim.AdamW(model.parameters(),
                                             lr=config.lr,
                                             weight_decay=config.weight_decay,
             )
 
-            # scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
-            #                                             step_size=config.step_size,
-            #                                             gamma=config.gamma)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                                                                    optimizer, 
-                                                                    T_max=config.epochs, 
-                                                                    eta_min=1e-5
-)
+            scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
+                                                        step_size=config.step_size,
+                                                        gamma=config.gamma)
+            # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            #                                                         optimizer, 
+            #                                                         T_max=config.epochs, 
+            #                                                         eta_min=1e-5
+# )
 
             # fit the model using only training and validation data, no testing data allowed here
             print()
