@@ -61,7 +61,7 @@ class AudioResNet18(nn.Module):
 
         # Klassifikationskopf
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.dropout  = nn.Dropout(p=0.5)
+        self.dropout  = nn.Dropout(p=0.3)
         self.fc      = nn.Linear(512 * BasicBlock.expansion, n_classes)
 
         # Gewichtsinitialisierung
