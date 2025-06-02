@@ -20,7 +20,7 @@ class BasicBlock(nn.Module):
         self.relu  = nn.ReLU(inplace=True)
         self.conv2 = conv3x3(planes, planes)
         self.bn2   = nn.BatchNorm2d(planes)
-        self.dropout = nn.Dropout(p=0.25)
+        # self.dropout = nn.Dropout(p=0.25)
         self.downsample = downsample
 
     def forward(self, x):
@@ -38,7 +38,7 @@ class BasicBlock(nn.Module):
 
         out += identity
         out = self.relu(out)
-        out = self.dropout(out)   # NEU: Dropout am Block-Ende
+        # out = self.dropout(out)   # NEU: Dropout am Block-Ende
         return out
 
 class AudioResNet18(nn.Module):
@@ -61,7 +61,7 @@ class AudioResNet18(nn.Module):
 
         # Klassifikationskopf
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.dropout  = nn.Dropout(p=0.3)
+        self.dropout  = nn.Dropout(p=0.25)
         self.fc      = nn.Linear(512 * BasicBlock.expansion, n_classes)
 
         # Gewichtsinitialisierung
