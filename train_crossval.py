@@ -129,6 +129,8 @@ def fit_classifier():
         val_acc, val_loss, _ = test(model, val_loader, criterion=criterion, device=device)
         val_loss_avg = np.mean(val_loss)
 
+        scheduler.step(val_loss_avg)
+
         # print('\n')
         pbar.update()
         # pbar.refresh() syncs output when pbar on stderr
@@ -228,17 +230,22 @@ if __name__ == "__main__":
             optimizer = torch.optim.AdamW(model.parameters(),
                                             lr=config.lr,
                                             weight_decay=config.weight_decay,
-                                            betas=(0.9, 0.95),
+                                            betas=(0.9, 0.999),
             )
 
             # scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
             #                                             step_size=config.step_size,
             #                                             gamma=config.gamma)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                                                                    optimizer, 
-                                                                    T_max=config.epochs, 
-                                                                    eta_min=1e-5
-)
+#             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+#                                                                     optimizer, 
+#                                                                     T_max=config.epochs, 
+#                                                                     eta_min=1e-5
+# )
+            
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, mode='min', factor=0.5, patience=8, min_lr=1e-6, verbose=True
+            )
+
             # ReduceLROnPlateau scheduler
 
 

@@ -37,13 +37,13 @@ persistent_workers = True
 epochs = 200
 #epochs = 1
 # early stopping after epochs with no improvement
-patience = 20
-lr = 2e-4
+patience = 25
+lr = 1e-3
 weight_decay = 5e-5
 warm_epochs = 8
 gamma = 0.8
 step_size = 2
-mixup_alpha = 0.20
+mixup_alpha = 0.1
 
 # ### TESTING
 # model checkpoints loaded for testing
