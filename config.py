@@ -29,7 +29,7 @@ device_id = 0
 batch_size = 64
 # in Colab to avoid Warning
 
-num_workers = 6
+num_workers = 4
 
 # for local Windows or Linux machine
 persistent_workers = True
@@ -38,12 +38,12 @@ epochs = 200
 #epochs = 1
 # early stopping after epochs with no improvement
 patience = 20
-lr = 1e-3
+lr = 2e-4
 weight_decay = 5e-5
-warm_epochs = 10
+warm_epochs = 8
 gamma = 0.8
 step_size = 2
-mixup_alpha = 0.13
+mixup_alpha = 0.20
 
 # ### TESTING
 # model checkpoints loaded for testing

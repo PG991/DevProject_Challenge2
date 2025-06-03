@@ -228,6 +228,7 @@ if __name__ == "__main__":
             optimizer = torch.optim.AdamW(model.parameters(),
                                             lr=config.lr,
                                             weight_decay=config.weight_decay,
+                                            betas=(0.9, 0.95),
             )
 
             # scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
@@ -238,6 +239,8 @@ if __name__ == "__main__":
                                                                     T_max=config.epochs, 
                                                                     eta_min=1e-5
 )
+            # ReduceLROnPlateau scheduler
+
 
             # fit the model using only training and validation data, no testing data allowed here
             print()
