@@ -43,7 +43,7 @@ weight_decay = 5e-5
 warm_epochs = 8
 gamma = 0.8
 step_size = 2
-mixup_alpha = 0.1
+mixup_alpha = 0.15
 
 # ### TESTING
 # model checkpoints loaded for testing
