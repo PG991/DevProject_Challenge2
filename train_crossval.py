@@ -151,7 +151,7 @@ def fit_classifier():
             break
 
         # advance the optimization scheduler
-        scheduler.step()
+        #scheduler.step()
     # save full model
     torch.save(model.state_dict(), os.path.join(experiment, 'terminal.pt'))
 
@@ -243,7 +243,7 @@ if __name__ == "__main__":
 # )
             
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, mode='min', factor=0.5, patience=8, min_lr=1e-6, verbose=True
+                optimizer, mode='min', factor=0.5, patience=8, min_lr=1e-6
             )
 
             # ReduceLROnPlateau scheduler
