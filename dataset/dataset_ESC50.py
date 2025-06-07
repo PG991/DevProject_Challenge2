@@ -58,6 +58,7 @@ class ESC50(data.Dataset):
         root = os.path.normpath(root)
         audio = os.path.join(root, audio)
 
+        # caches for loaded waveforms and mel spectrograms (per instance, not shared!)
         self.mel_dict = {}
         self.wave_file_dict = {}
 
@@ -66,7 +67,7 @@ class ESC50(data.Dataset):
             self.subset = subset
         else:
             raise ValueError
-        # path = path.split(os.sep)
+        
         if not os.path.exists(audio) and download:
             os.makedirs(root, exist_ok=True)
             file_name = 'master.zip'
@@ -78,12 +79,16 @@ class ESC50(data.Dataset):
         # getting name of all files inside the all the train_folds
         temp = sorted(os.listdir(self.root))
         folds = {int(v.split('-')[0]) for v in temp}
+
         self.test_folds = set(test_folds)
         self.train_folds = folds - test_folds
+
         train_files = [f for f in temp if int(f.split('-')[0]) in self.train_folds]
         test_files = [f for f in temp if int(f.split('-')[0]) in test_folds]
+
         # sanity check
         assert set(temp) == (set(train_files) | set(test_files))
+
         if subset == "test":
             self.file_names = test_files
         else:
@@ -93,6 +98,7 @@ class ESC50(data.Dataset):
                 self.file_names = train_files
             else:
                 self.file_names = val_files
+
         # the number of samples in the wave (=length) required for spectrogram
         out_len = int(((config.sr * 5) // config.hop_length) * config.hop_length)
         train = self.subset == "train"
@@ -108,9 +114,6 @@ class ESC50(data.Dataset):
             )
 
             self.spec_transforms = transforms.Compose(
-                # to Tensor and prepend singleton dim
-                #lambda x: torch.Tensor(x).unsqueeze(0),
-                # lambda non-pickleable, problem on windows, replace with partial function
                 torch.Tensor,
                 partial(torch.unsqueeze, dim=0),
                 SpecAugment(time_mask_param=15, freq_mask_param=7, num_masks=1),
@@ -143,27 +146,32 @@ class ESC50(data.Dataset):
         temp = file_name.split('.')[0]
         class_id = int(temp.split('-')[-1])
 
-        # --- Caching für Original-Wave ---
+        # cache the original waveform (no augmentation here)
         if path not in self.wave_file_dict:
             wave, rate = librosa.load(path, sr=config.sr)
+
             if wave.ndim == 1:
                 wave = wave[:, np.newaxis]
+
             if np.abs(wave.max()) > 1.0:
                 wave = transforms.scale(wave, wave.min(), wave.max(), -1.0, 1.0)
+
             wave = wave.T * 32768.0
+
+            # Remove silent sections
             start = wave.nonzero()[1].min()
             end = wave.nonzero()[1].max()
             wave = wave[:, start: end + 1]
             self.wave_file_dict[path] = wave
 
-        # --- Augmentation IMMER erst HIER, NACH dem Caching ---
+        # apply waveform augmentations AFTER caching the original wave
         wave = self.wave_file_dict[path]
         wave_copy = np.copy(wave)
         wave_copy = self.wave_transforms(wave_copy)
         wave_copy.squeeze_(0)
 
-        # Caching für Mel/MFCC OHNE Augmentierung
-        # (Dennoch: Mel-Spektrogramm wird aus der augmentierten Welle gebildet.)
+        # cache mel or mfcc features (no augmentation in the cache)
+        # Mel/MFCC is always computed from the (possibly augmented) waveform
         if self.n_mfcc:
             mel_cache_key = (path, 'mfcc')
             if mel_cache_key not in self.mel_dict:
@@ -190,14 +198,15 @@ class ESC50(data.Dataset):
                 log_s = librosa.power_to_db(s, ref=np.max)
                 self.mel_dict[mel_cache_key] = log_s
             log_s = self.mel_dict[mel_cache_key]
+
+            # apply spec augmentations here (not in cache)
             feat = self.spec_transforms(log_s)
 
+        # normalize if needed
         if self.global_mean:
             feat = (feat - self.global_mean) / self.global_std
 
         return file_name, feat, class_id
-
-
 
 def get_global_stats(data_path):
     res = []

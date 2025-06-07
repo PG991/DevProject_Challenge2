@@ -15,24 +15,27 @@ from models.utils import EarlyStopping, Tee
 from dataset.dataset_ESC50 import ESC50
 import config
 
-
-print("CUDA verfügbar:", torch.cuda.is_available())
-print("Anzahl CUDA-Devices:", torch.cuda.device_count())
+print("CUDA available:", torch.cuda.is_available())
+print("CUDA-Devices:", torch.cuda.device_count())
 if torch.cuda.is_available():
     print("GPU-Name:", torch.cuda.get_device_name(0))
 
-
-def mixup_data(x, y, alpha=config.mixup_alpha):
-    """Returns mixed inputs, pairs of targets, and lambda"""
+# mixup data augmentation function
+def mixup_data(x, y, alpha=config.mixup_alpha): 
+    # returns mixed inputs, pairs of targets, and lambda
     if alpha > 0:
+        # sample lambda from the Beta distribution
         lam = np.random.beta(alpha, alpha)
     else:
-        lam = 1
+        lam = 1 # no mixup if alpha is 0
+
     batch_size = x.size(0)
+    # create a random permutation of the batch
     index = torch.randperm(batch_size).to(x.device)
+    # mix the input data and the labels
     mixed_x = lam * x + (1 - lam) * x[index, :]
     y_a, y_b = y, y[index]
-    return mixed_x, y_a, y_b, lam
+    return mixed_x, y_a, y_b, lam # return the mixed data and targets
 
 # mean and std of train data for every fold
 global_stats = np.array([[-54.364834, 20.853344],
@@ -74,24 +77,19 @@ def test(model, dataloader, criterion, device):
 def train_epoch():
     # switch to training
     model.train()
-
     losses = []
     corrects = 0
     samples_count = 0
-
-    # for _, x, label in tqdm(train_loader, unit='bat', disable=config.disable_bat_pbar, position=0):
-    #     x = x.float().to(device)
-    #     y_true = label.to(device)         --> original code
 
     for _, x, label in tqdm(train_loader, unit='bat',
                             disable=config.disable_bat_pbar, position=0):
         x = x.float().to(device)
         y_true = label.to(device)
 
-        # Mixup anwenden
+        # Mixup
         x_mix, y_a, y_b, lam = mixup_data(x, y_true, alpha=config.mixup_alpha)
 
-        # Forward + gemischter Loss
+        # forward + mixed Loss
         y_prob = model(x_mix)
         loss   = lam * criterion(y_prob, y_a) + (1 - lam) * criterion(y_prob, y_b)
 
@@ -101,12 +99,12 @@ def train_epoch():
 
         losses.append(loss.item())
 
-        # Mixup-gerechte Acc-Berechnung
+        # mixup  acc-calculation
         y_pred = torch.argmax(y_prob, dim=1)
         batch_acc = (
             lam * (y_pred == y_a).float()
           + (1-lam) * (y_pred == y_b).float()
-        ).sum().item()  # Summe über Batch
+        ).sum().item()  # sum over Batch
         corrects      += batch_acc
         samples_count += x.size(0)
 
@@ -131,10 +129,7 @@ def fit_classifier():
 
         scheduler.step(val_loss_avg)
 
-        # print('\n')
         pbar.update()
-        # pbar.refresh() syncs output when pbar on stderr
-        # pbar.refresh()
         print(end=' ')
         print(  # f" Epoch: {epoch}/{num_epochs}",
             f"TrnAcc={train_acc:{float_fmt}}",
@@ -150,8 +145,6 @@ def fit_classifier():
             print("Early stopping")
             break
 
-        # advance the optimization scheduler
-        #scheduler.step()
     # save full model
     torch.save(model.state_dict(), os.path.join(experiment, 'terminal.pt'))
 
@@ -179,8 +172,7 @@ if __name__ == "__main__":
 
     # for all folds
     scores = {}
-    # expensive!
-    #global_stats = get_global_stats(data_path)
+
     # for spectrograms
     print("WARNING: Using hardcoded global mean and std. Depends on feature settings!")
     for test_fold in config.test_folds:
@@ -227,27 +219,17 @@ if __name__ == "__main__":
             # Define a loss function and optimizer
             criterion = nn.CrossEntropyLoss().to(device)
 
+            # set up AdamW optimizer
             optimizer = torch.optim.AdamW(model.parameters(),
                                             lr=config.lr,
                                             weight_decay=config.weight_decay,
                                             betas=(0.9, 0.999),
             )
 
-            # scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
-            #                                             step_size=config.step_size,
-            #                                             gamma=config.gamma)
-#             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-#                                                                     optimizer, 
-#                                                                     T_max=config.epochs, 
-#                                                                     eta_min=1e-5
-# )
-            
+            # learning rate scheduler: reduce LR when validation loss stops improving
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer, mode='min', factor=0.5, patience=8, min_lr=1e-6
             )
-
-            # ReduceLROnPlateau scheduler
-
 
             # fit the model using only training and validation data, no testing data allowed here
             print()
@@ -267,5 +249,6 @@ if __name__ == "__main__":
             print(scores[test_fold])
             # print(scores[test_fold].unstack())
             print()
+
     scores = pd.concat(scores).unstack([-1])
     print(pd.concat((scores, scores.agg(['mean', 'std']))))
